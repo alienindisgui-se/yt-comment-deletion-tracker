@@ -87,6 +87,9 @@ def get_yt_data(v_id, deep_scrape=False):
             return count, comments, title
     except Exception as e:
         error_str = str(e)
+        if 'Sign in to confirm you’re not a bot' in error_str:
+            logging.error(f"Bot detection triggered for {v_id}: {error_str}")
+            sys.exit(1)
         if '403' in error_str or 'Forbidden' in error_str or 'throttle' in error_str.lower():
             print(f"WARNING: Possible throttling or ban detected for {v_id}: {error_str}")
         elif '127.0.0.1:4416' in error_str or 'po_token' in error_str.lower():
