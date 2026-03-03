@@ -25,18 +25,18 @@ def get_yt_data(v_id, deep_scrape=False):
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={v_id}", download=False)
             count = info.get('comment_count', 0)
-            comments = {c['id']: {'a': c['author'], 't': c['text']} for c in info.get('comments', [])} if deep_scrape else None
+            comments = {c['id']: {'a': c['author'], 't': c['text'], 'ts': c['timestamp']} for c in info.get('comments', [])} if deep_scrape else None
             return count, comments
     except Exception as e:
         print(f"Error fetching {v_id}: {e}")
         return None, None
 
-def send_deletion_alert(author, text, v_id):
+def send_deletion_alert(author, text, v_id, ts, deleted_at):
     url = f"https://www.youtube.com/watch?v={v_id}"
     payload = {
         "embeds": [{
             "title": "🗑️ Deleted Comment Detected",
-            "description": f"**Author:** `{author}`\n**Content:** {text[:800]}",
+            "description": f"**Author:** `{author}`\n**Content:** {text[:800]}\n**Posted:** <t:{int(ts)}:f>\n**Deleted:** <t:{int(deleted_at)}:f>",
             "color": 0xe74c3c,
             "fields": [{"name": "Video Link", "value": f"[View Video]({url})", "inline": True}],
             "footer": {"text": f"Video ID: {v_id} | Stealth Monitor 2026"}
@@ -52,7 +52,7 @@ if not os.path.exists(VIDEO_LIST):
 with open(VIDEO_LIST, "r") as f: video_ids = json.load(f)
 
 history_exists = os.path.exists(STATE_FILE)
-history = json.load(open(STATE_FILE, "r")) if history_exists else {}
+history = json.load(open(STATE_FILE, "r", encoding='utf-8')) if history_exists else {}
 
 for v_id in video_ids:
     print(f"Checking {v_id}...")
@@ -68,10 +68,15 @@ for v_id in video_ids:
 
         # Only notify if we have a previous state to compare to
         if history_exists and old_data["comments"]:
+            deletions = []
             for c_id, data in old_data["comments"].items():
                 if c_id not in current_comments:
-                    send_deletion_alert(data['a'], data['t'], v_id)
+                    deletions.append({'id': c_id, 'a': data['a'], 't': data['t'], 'ts': data.get('ts', 0), 'deleted_at': time.time()})
 
-        history[v_id] = {"count": current_count, "comments": current_comments}
+        history[v_id] = {"count": current_count, "comments": current_comments, "deletions": deletions}
 
-with open(STATE_FILE, "w") as f: json.dump(history, f, indent=2)
+for v_id, data in history.items():
+    for deletion in data.get('deletions', []):
+        send_deletion_alert(deletion['a'], deletion['t'], v_id, deletion['ts'], deletion['deleted_at'])
+
+with open(STATE_FILE, "w", encoding='utf-8') as f: json.dump(history, f, indent=2, ensure_ascii=False)
