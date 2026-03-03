@@ -54,12 +54,19 @@ with open(VIDEO_LIST, "r") as f: video_ids = json.load(f)
 history_exists = os.path.exists(STATE_FILE)
 history = json.load(open(STATE_FILE, "r", encoding='utf-8')) if history_exists else {}
 
-for v_id in video_ids:
+CHECK_BATCH = 10
+sorted_vids = sorted(video_ids, key=lambda v: history.get(v, {}).get('last_checked', 0))
+video_ids_to_check = sorted_vids[:CHECK_BATCH]
+
+for v_id in video_ids_to_check:
     print(f"Checking {v_id}...")
     current_count, _ = get_yt_data(v_id, deep_scrape=False)
     if current_count is None: continue
     
     old_data = history.get(v_id, {"count": -1, "comments": {}})
+    
+    if v_id not in history:
+        history[v_id] = {"count": old_data["count"], "comments": old_data["comments"], "deletions": []}
     
     # If the count changed, we need to see what's missing
     if current_count != old_data["count"]:
@@ -75,6 +82,8 @@ for v_id in video_ids:
                     deletions.append({'id': c_id, 'a': data['a'], 't': data['t'], 'ts': data.get('ts', 0), 'deleted_at': time.time()})
 
         history[v_id] = {"count": current_count, "comments": current_comments, "deletions": deletions}
+
+    history[v_id]['last_checked'] = time.time()
 
 for v_id, data in history.items():
     for deletion in data.get('deletions', []):
