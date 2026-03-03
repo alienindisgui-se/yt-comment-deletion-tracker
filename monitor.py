@@ -1,0 +1,77 @@
+import yt_dlp
+import json
+import os
+import requests
+import time
+import random
+
+# CONFIG
+VIDEO_LIST = "videos.json"
+STATE_FILE = "comment_state.json"
+WEBHOOK = os.getenv("DISCORD_WEBHOOK")
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
+def get_yt_data(v_id, deep_scrape=False):
+    time.sleep(random.uniform(2, 5)) # Random delay to look human
+    opts = {
+        'getcomments': deep_scrape,
+        'quiet': True,
+        'extract_flat': True,
+        'skip_download': True,
+        'user_agent': USER_AGENT,
+        'no_warnings': True
+    }
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(f"https://www.youtube.com/watch?v={v_id}", download=False)
+            count = info.get('comment_count', 0)
+            comments = {c['id']: {'a': c['author'], 't': c['text']} for c in info.get('comments', [])} if deep_scrape else None
+            return count, comments
+    except Exception as e:
+        print(f"Error fetching {v_id}: {e}")
+        return None, None
+
+def send_deletion_alert(author, text, v_id):
+    url = f"https://www.youtube.com/watch?v={v_id}"
+    payload = {
+        "embeds": [{
+            "title": "🗑️ Deleted Comment Detected",
+            "description": f"**Author:** `{author}`\n**Content:** {text[:800]}",
+            "color": 0xe74c3c,
+            "fields": [{"name": "Video Link", "value": f"[View Video]({url})", "inline": True}],
+            "footer": {"text": f"Video ID: {v_id} | Stealth Monitor 2026"}
+        }]
+    }
+    requests.post(WEBHOOK, json=payload)
+
+# START PROCESS
+if not os.path.exists(VIDEO_LIST):
+    with open(VIDEO_LIST, "w") as f: json.dump(["dQw4w9WgXcQ"], f)
+    exit("videos.json created. Add your IDs and run again.")
+
+with open(VIDEO_LIST, "r") as f: video_ids = json.load(f)
+
+history_exists = os.path.exists(STATE_FILE)
+history = json.load(open(STATE_FILE, "r")) if history_exists else {}
+
+for v_id in video_ids:
+    print(f"Checking {v_id}...")
+    current_count, _ = get_yt_data(v_id, deep_scrape=False)
+    if current_count is None: continue
+    
+    old_data = history.get(v_id, {"count": -1, "comments": {}})
+    
+    # If the count changed, we need to see what's missing
+    if current_count != old_data["count"]:
+        _, current_comments = get_yt_data(v_id, deep_scrape=True)
+        if current_comments is None: continue
+
+        # Only notify if we have a previous state to compare to
+        if history_exists and old_data["comments"]:
+            for c_id, data in old_data["comments"].items():
+                if c_id not in current_comments:
+                    send_deletion_alert(data['a'], data['t'], v_id)
+
+        history[v_id] = {"count": current_count, "comments": current_comments}
+
+with open(STATE_FILE, "w") as f: json.dump(history, f, indent=2)
