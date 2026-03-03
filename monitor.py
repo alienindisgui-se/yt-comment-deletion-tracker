@@ -4,6 +4,7 @@ import os
 import requests
 import time
 import random
+import sys
 
 # CONFIG
 VIDEO_LIST = "videos.json"
@@ -52,15 +53,7 @@ def get_yt_data(v_id, deep_scrape=False):
         'extract_flat': True,
         'skip_download': True,
         'user_agent': user_agent,
-        'no_warnings': True,
-        'http_headers': {
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-            'Accept-Language': random.choice(['en-US,en;q=0.5', 'sv-SE,sv;q=0.9', 'en-GB,en;q=0.8']),
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
-        }
+        'no_warnings': True
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -105,10 +98,19 @@ sorted_vids = sorted(video_ids, key=lambda v: history.get(v, {}).get('last_check
 video_ids_to_check = sorted_vids[:CHECK_BATCH]
 
 for v_id in video_ids_to_check:
-    print(f"Checking {v_id}...")
-    current_count, _, _ = get_yt_data(v_id, deep_scrape=False)
-    if current_count is None: continue
-    
+    if len(v_id) != 11:
+        print(f"Skipping invalid video ID: {v_id}")
+        continue
+    current_count, _, title = get_yt_data(v_id, deep_scrape=False)
+    if current_count is None:
+        print(f"Checking {v_id}...")
+        print(f"Aborting script due to failure fetching {v_id}")
+        sys.exit(1)
+    else:
+        print(f"Checking: {title} [{v_id}]")
+
+    video_title = title if current_count is not None else None
+
     old_data = history.get(v_id, {"count": -1, "comments": {}})
     
     if v_id not in history:
@@ -117,7 +119,10 @@ for v_id in video_ids_to_check:
     # If the count changed, we need to see what's missing
     if current_count != old_data["count"]:
         _, current_comments, title = get_yt_data(v_id, deep_scrape=True)
-        if current_comments is None: continue
+        if current_comments is None:
+            display_name = f"{video_title} [{v_id}]" if video_title else v_id
+            print(f"Aborting script due to failure fetching comments for {display_name}")
+            sys.exit(1)
 
         deletions = []
 
