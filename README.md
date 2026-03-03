@@ -71,12 +71,31 @@ Edit `videos.json` to include the YouTube video IDs you want to monitor:
 ### 3. YouTube Bot Bypass (Automatic in CI)
 The GitHub Actions workflow automatically handles YouTube's bot detection by:
 
-- Downloading and running `bgutil-pot` (a Proof-of-Origin token provider) to generate guest PO tokens on-demand.
+- Downloading and running `bgutil-pot` (a Proof-of-origin token provider) to generate guest PO tokens on-demand.
 - Configuring yt-dlp to use these guest tokens without requiring personal YouTube account data.
 
 This approach is safer as it uses anonymous guest sessions that can be refreshed per run, eliminating the need for cookies or personal tokens.
 
 For local testing, you may occasionally encounter bot detection. If needed, you can run the same bgutil-pot tool locally or adjust request frequencies.
+
+#### Local Development Setup
+To run the PO token provider locally for development or testing:
+
+1. **Download the binary:**
+   ```bash
+   # For Linux x86_64
+   curl -L https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/download/v0.7.2/bgutil-pot-linux-x86_64 -o bgutil-pot
+   chmod +x bgutil-pot
+
+   # For other platforms, check the releases page for available binaries
+   ```
+
+2. **Run the server:**
+   ```bash
+   ./bgutil-pot server --host 127.0.0.1 --port 4416
+   ```
+
+3. **The monitor script will automatically use the local server** when `po_token: ['web+http://127.0.0.1:4416']` is configured.
 
 No additional GitHub secrets are required beyond `DISCORD_WEBHOOK`.
 
