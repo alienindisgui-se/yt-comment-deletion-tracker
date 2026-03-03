@@ -16,6 +16,7 @@ if WEBHOOK is None and os.path.exists('.env'):
             if line.startswith('DISCORD_WEBHOOK='):
                 WEBHOOK = line.split('=', 1)[1].strip()
                 break
+COOKIE_FILE = os.getenv("COOKIE_FILE")
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -55,6 +56,8 @@ def get_yt_data(v_id, deep_scrape=False):
         'user_agent': user_agent,
         'no_warnings': True
     }
+    if COOKIE_FILE:
+        opts['cookiefile'] = COOKIE_FILE
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={v_id}", download=False)

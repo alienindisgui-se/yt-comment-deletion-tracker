@@ -68,6 +68,20 @@ Edit `videos.json` to include the YouTube video IDs you want to monitor:
 - Video IDs must be exactly 11 characters
 - Invalid IDs are automatically skipped with warnings
 
+### 3. YouTube Cookies (Optional, Recommended for CI)
+To bypass YouTube's bot detection in automated environments:
+
+1. Export YouTube cookies using browser developer tools or extensions (see yt-dlp wiki for detailed instructions).
+2. For GitHub Actions: Store the cookie content as a repository secret named `YOUTUBE_COOKIES`.
+3. For local use: Save cookies to a file and set `COOKIE_FILE` environment variable to the file path.
+
+Example:
+```bash
+export COOKIE_FILE="/path/to/cookies.txt"
+```
+
+This helps prevent "Sign in to confirm you're not a bot" errors.
+
 ## 🚀 Usage
 
 ### Manual Execution
@@ -80,6 +94,7 @@ python monitor.py
 1. Add your repository secrets in GitHub:
    - Go to Settings > Secrets and variables > Actions
    - Add `DISCORD_WEBHOOK` with your webhook URL
+   - Add `YOUTUBE_COOKIES` with your exported YouTube cookies (optional, helps bypass bot detection)
 
 2. Create a GitHub Actions workflow (`.github/workflows/monitor.yml`):
    ```yaml

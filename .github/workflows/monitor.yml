@@ -1,0 +1,29 @@
+name: Monitor Comments
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'  # Run every 20 minutes
+  workflow_dispatch:       # Allow manual trigger
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install yt-dlp requests
+      - name: Create cookie file
+        run: |
+          if [ -n "$YOUTUBE_COOKIES" ]; then
+            echo "$YOUTUBE_COOKIES" > cookies.txt
+          fi
+        env:
+          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+      - name: Run monitor
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          COOKIE_FILE: ${{ secrets.YOUTUBE_COOKIES && 'cookies.txt' || '' }}
+        run: python monitor.py
