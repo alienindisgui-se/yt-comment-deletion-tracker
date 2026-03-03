@@ -68,16 +68,27 @@ Edit `videos.json` to include the YouTube video IDs you want to monitor:
 - Video IDs must be exactly 11 characters
 - Invalid IDs are automatically skipped with warnings
 
-### 3. YouTube Cookies (Optional, Recommended for CI)
+### 3. YouTube Cookies and Tokens (Optional, Recommended for CI)
 To bypass YouTube's bot detection in automated environments:
 
-1. Export YouTube cookies using browser developer tools or extensions (see yt-dlp wiki for detailed instructions).
-2. For GitHub Actions: Store the cookie content as a repository secret named `YOUTUBE_COOKIES`.
-3. For local use: Save cookies to a file and set `COOKIE_FILE` environment variable to the file path.
+1. **Export YouTube cookies** using browser developer tools or extensions (see [yt-dlp wiki](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies) for detailed instructions).
+2. **Obtain PO Token and Visitor Data** (additional bypass parameters):
+   - Open YouTube in your browser (logged in).
+   - Open Developer Tools (F12) > Network tab.
+   - Reload the YouTube page.
+   - Look for requests to `youtube.com` or `www.youtube.com`.
+   - In the request headers or parameters, find:
+     - `po_token`: A token string (e.g., from page source search or request params).
+     - `visitor_data`: A data string (often in cookies or request body).
+   - Alternatively, search the page source (Ctrl+F) for "po_token" and "visitor_data".
+3. **Store in GitHub Actions**: Add as repository secrets `YOUTUBE_COOKIES`, `PO_TOKEN`, `VISITOR_DATA`.
+4. **For local use**: Save cookies to a file, set `COOKIE_FILE`, `PO_TOKEN`, `VISITOR_DATA` environment variables.
 
-Example:
+Example local setup:
 ```bash
 export COOKIE_FILE="/path/to/cookies.txt"
+export PO_TOKEN="your_po_token_here"
+export VISITOR_DATA="your_visitor_data_here"
 ```
 
 This helps prevent "Sign in to confirm you're not a bot" errors.
@@ -95,6 +106,8 @@ python monitor.py
    - Go to Settings > Secrets and variables > Actions
    - Add `DISCORD_WEBHOOK` with your webhook URL
    - Add `YOUTUBE_COOKIES` with your exported YouTube cookies (optional, helps bypass bot detection)
+   - Add `PO_TOKEN` with your PO token (optional)
+   - Add `VISITOR_DATA` with your visitor data (optional)
 
 2. Create a GitHub Actions workflow (`.github/workflows/monitor.yml`):
    ```yaml

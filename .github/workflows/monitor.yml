@@ -25,5 +25,7 @@ jobs:
       - name: Run monitor
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          COOKIE_FILE: ${{ secrets.YOUTUBE_COOKIES && 'cookies.txt' || '' }}
+          COOKIE_FILE: cookies.txt
+          PO_TOKEN: ${{ secrets.PO_TOKEN }}
+          VISITOR_DATA: ${{ secrets.VISITOR_DATA }}
         run: python monitor.py
