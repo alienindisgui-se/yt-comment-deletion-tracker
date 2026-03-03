@@ -31,12 +31,12 @@ def get_yt_data(v_id, deep_scrape=False):
         print(f"Error fetching {v_id}: {e}")
         return None, None
 
-def send_deletion_alert(author, text, v_id, ts, deleted_at):
+def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage):
     url = f"https://www.youtube.com/watch?v={v_id}"
     payload = {
         "embeds": [{
             "title": "🗑️ Deleted Comment Detected",
-            "description": f"**Author:** `{author}`\n**Content:** {text[:800]}\n**Posted:** <t:{int(ts)}:f>\n**Deleted:** <t:{int(deleted_at)}:f>",
+            "description": f"**Author:** `{author}`\n**Content:** {text[:800]}\n**Posted:** <t:{int(ts)}:f>\n**Deleted:** <t:{int(deleted_at)}:f>\n\n{percentage:.1f}% of the registered comments on this video has been removed.",
             "color": 0xe74c3c,
             "fields": [{"name": "Video Link", "value": f"[View Video]({url})", "inline": True}],
             "footer": {"text": f"Video ID: {v_id} | Stealth Monitor 2026"}
@@ -86,7 +86,12 @@ for v_id in video_ids_to_check:
     history[v_id]['last_checked'] = time.time()
 
 for v_id, data in history.items():
-    for deletion in data.get('deletions', []):
-        send_deletion_alert(deletion['a'], deletion['t'], v_id, deletion['ts'], deletion['deleted_at'])
+    deletions = data.get('deletions', [])
+    if deletions:
+        total_registered = len(data.get('comments', {}))
+        removed_count = len(deletions)
+        percentage = (removed_count / total_registered * 100) if total_registered > 0 else 0
+        for deletion in deletions:
+            send_deletion_alert(deletion['a'], deletion['t'], v_id, deletion['ts'], deletion['deleted_at'], percentage)
 
 with open(STATE_FILE, "w", encoding='utf-8') as f: json.dump(history, f, indent=2, ensure_ascii=False)
