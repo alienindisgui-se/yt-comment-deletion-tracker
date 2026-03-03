@@ -15,17 +15,18 @@ jobs:
           python-version: '3.9'
       - name: Install dependencies
         run: pip install yt-dlp requests
-      - name: Create cookie file
+      - name: Install & Run POT Provider
         run: |
-          if [ -n "$YOUTUBE_COOKIES" ]; then
-            echo "$YOUTUBE_COOKIES" > cookies.txt
-          fi
-        env:
-          YOUTUBE_COOKIES: ${{ secrets.YOUTUBE_COOKIES }}
+          # 1. Download the Linux binary for the POT provider
+          curl -L https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/latest/download/bgutil-pot-linux-x86_64 -o bgutil-pot
+          chmod +x bgutil-pot
+          
+          # 2. Run it in the background on port 4416
+          ./bgutil-pot server --host 127.0.0.1 --port 4416 &
+          
+          # 3. Give it 5 seconds to start up
+          sleep 5
       - name: Run monitor
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          COOKIE_FILE: cookies.txt
-          PO_TOKEN: ${{ secrets.PO_TOKEN }}
-          VISITOR_DATA: ${{ secrets.VISITOR_DATA }}
         run: python monitor.py

@@ -68,30 +68,17 @@ Edit `videos.json` to include the YouTube video IDs you want to monitor:
 - Video IDs must be exactly 11 characters
 - Invalid IDs are automatically skipped with warnings
 
-### 3. YouTube Cookies and Tokens (Optional, Recommended for CI)
-To bypass YouTube's bot detection in automated environments:
+### 3. YouTube Bot Bypass (Automatic in CI)
+The GitHub Actions workflow automatically handles YouTube's bot detection by:
 
-1. **Export YouTube cookies** using browser developer tools or extensions (see [yt-dlp wiki](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies) for detailed instructions).
-2. **Obtain PO Token and Visitor Data** (additional bypass parameters):
-   - Open YouTube in your browser (logged in).
-   - Open Developer Tools (F12) > Network tab.
-   - Reload the YouTube page.
-   - Look for requests to `youtube.com` or `www.youtube.com`.
-   - In the request headers or parameters, find:
-     - `po_token`: A token string (e.g., from page source search or request params).
-     - `visitor_data`: A data string (often in cookies or request body).
-   - Alternatively, search the page source (Ctrl+F) for "po_token" and "visitor_data".
-3. **Store in GitHub Actions**: Add as repository secrets `YOUTUBE_COOKIES`, `PO_TOKEN`, `VISITOR_DATA`.
-4. **For local use**: Save cookies to a file, set `COOKIE_FILE`, `PO_TOKEN`, `VISITOR_DATA` environment variables.
+- Downloading and running `bgutil-pot` (a Proof-of-Origin token provider) to generate guest PO tokens on-demand.
+- Configuring yt-dlp to use these guest tokens without requiring personal YouTube account data.
 
-Example local setup:
-```bash
-export COOKIE_FILE="/path/to/cookies.txt"
-export PO_TOKEN="your_po_token_here"
-export VISITOR_DATA="your_visitor_data_here"
-```
+This approach is safer as it uses anonymous guest sessions that can be refreshed per run, eliminating the need for cookies or personal tokens.
 
-This helps prevent "Sign in to confirm you're not a bot" errors.
+For local testing, you may occasionally encounter bot detection. If needed, you can run the same bgutil-pot tool locally or adjust request frequencies.
+
+No additional GitHub secrets are required beyond `DISCORD_WEBHOOK`.
 
 ## 🚀 Usage
 
@@ -105,9 +92,6 @@ python monitor.py
 1. Add your repository secrets in GitHub:
    - Go to Settings > Secrets and variables > Actions
    - Add `DISCORD_WEBHOOK` with your webhook URL
-   - Add `YOUTUBE_COOKIES` with your exported YouTube cookies (optional, helps bypass bot detection)
-   - Add `PO_TOKEN` with your PO token (optional)
-   - Add `VISITOR_DATA` with your visitor data (optional)
 
 2. Create a GitHub Actions workflow (`.github/workflows/monitor.yml`):
    ```yaml

@@ -16,9 +16,6 @@ if WEBHOOK is None and os.path.exists('.env'):
             if line.startswith('DISCORD_WEBHOOK='):
                 WEBHOOK = line.split('=', 1)[1].strip()
                 break
-COOKIE_FILE = os.getenv("COOKIE_FILE")
-PO_TOKEN = os.getenv("PO_TOKEN")
-VISITOR_DATA = os.getenv("VISITOR_DATA")
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -56,20 +53,10 @@ def get_yt_data(v_id, deep_scrape=False):
         'extract_flat': True,
         'skip_download': True,
         'user_agent': user_agent,
-        'no_warnings': True
+        'no_warnings': True,
+        'no_cookies': True,
+        'extractor_args': {'youtube': {'po_token': ['web+http://127.0.0.1:4416']}}
     }
-    if COOKIE_FILE and os.path.exists(COOKIE_FILE):
-        opts['cookiefile'] = COOKIE_FILE
-    extractor_args = {}
-    if PO_TOKEN or VISITOR_DATA:
-        youtube_args = []
-        if PO_TOKEN:
-            youtube_args.append(f'po_token={PO_TOKEN}')
-        if VISITOR_DATA:
-            youtube_args.append(f'visitor_data={VISITOR_DATA}')
-        extractor_args['youtube'] = ';'.join(youtube_args)
-    if extractor_args:
-        opts['extractor_args'] = extractor_args
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={v_id}", download=False)
