@@ -72,13 +72,21 @@ def get_yt_data(v_id, deep_scrape=False):
 
 def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
     url = f"https://www.youtube.com/watch?v={v_id}"
+    if percentage <= 25:
+        color = 0xFFEB3B
+    elif percentage <= 50:
+        color = 0xFFC107
+    elif percentage <= 75:
+        color = 0xFF7043
+    else:
+        color = 0xD32F2F
     payload = {
         "embeds": [{
-            "title": "🗑️ Deleted Comment Detected",
-            "description": f"**Author:** `{author}`\n**Content:** {text[:800]}\n**Posted:** <t:{int(ts)}:f>\n**Deleted:** <t:{int(deleted_at)}:f>\n\n{percentage:.1f}% of the registered comments on this video has been removed.",
-            "color": 0xe74c3c,
+            "title": "� Deleted Comment Detected",
+            "description": f"**Author:** `{author}`\n**Content:** {text[:800]}\n**Posted:** <t:{int(ts)}:f>\n**Deleted:** <t:{int(deleted_at)}:f>\n\n**{percentage:.1f}%** of the registered comments on this video has been removed.",
+            "color": color,
             "fields": [{"name": title, "value": f"[View Video]({url})", "inline": True}],
-            "footer": {"text": f"Video ID: {v_id} | Stealth Monitor 2026"}
+            "footer": {"text": f"Video ID: {v_id} | [yt-comment-deletion-tracker](https://github.com/alienindisgui-se/yt-comment-deletion-tracker)"}
         }]
     }
     requests.post(WEBHOOK, json=payload)
