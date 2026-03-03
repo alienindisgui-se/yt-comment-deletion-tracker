@@ -82,7 +82,7 @@ def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
         color = 0xD32F2F
     payload = {
         "embeds": [{
-            "title": "� Deleted Comment Detected",
+            "title": "🚨 Deleted Comment Detected",
             "description": f"**Author:** `{author}`\n**Content:** {text[:800]}\n**Posted:** <t:{int(ts)}:f>\n**Deleted:** <t:{int(deleted_at)}:f>\n\n**{percentage:.1f}%** of the registered comments on this video has been removed.",
             "color": color,
             "fields": [{"name": title, "value": f"[View Video]({url})", "inline": True}],
