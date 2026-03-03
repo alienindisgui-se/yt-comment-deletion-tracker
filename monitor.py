@@ -66,9 +66,10 @@ for v_id in video_ids:
         _, current_comments = get_yt_data(v_id, deep_scrape=True)
         if current_comments is None: continue
 
+        deletions = []
+
         # Only notify if we have a previous state to compare to
         if history_exists and old_data["comments"]:
-            deletions = []
             for c_id, data in old_data["comments"].items():
                 if c_id not in current_comments:
                     deletions.append({'id': c_id, 'a': data['a'], 't': data['t'], 'ts': data.get('ts', 0), 'deleted_at': time.time()})
