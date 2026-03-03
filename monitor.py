@@ -5,8 +5,10 @@ import requests
 import time
 import random
 import sys
+import logging
+import socket
 
-# CONFIG
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 VIDEO_LIST = "videos.json"
 STATE_FILE = "comment_state.json"
 WEBHOOK = os.getenv("DISCORD_WEBHOOK")
@@ -16,6 +18,22 @@ if WEBHOOK is None and os.path.exists('.env'):
             if line.startswith('DISCORD_WEBHOOK='):
                 WEBHOOK = line.split('=', 1)[1].strip()
                 break
+
+# Validate webhook URL
+if WEBHOOK and not WEBHOOK.startswith('https://discord.com/api/webhooks/'):
+    logging.error(f"Invalid Discord webhook URL format: {WEBHOOK}")
+    WEBHOOK = None
+
+def check_po_token_server():
+    """Check if the PO token server is running on localhost:4416"""
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex(('127.0.0.1', 4416))
+        sock.close()
+        return result == 0
+    except:
+        return False
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -53,8 +71,13 @@ def get_yt_data(v_id, deep_scrape=False):
         'extract_flat': True,
         'skip_download': True,
         'user_agent': user_agent,
-        'no_warnings': True
+        'no_warnings': True,
+        'no_cookies': True
     }
+    if check_po_token_server():
+        opts['extractor_args'] = {'youtube': {'po_token': ['web+http://127.0.0.1:4416']}}
+    else:
+        logging.info("PO token server not available, proceeding without PO tokens")
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(f"https://www.youtube.com/watch?v={v_id}", download=False)
@@ -66,11 +89,16 @@ def get_yt_data(v_id, deep_scrape=False):
         error_str = str(e)
         if '403' in error_str or 'Forbidden' in error_str or 'throttle' in error_str.lower():
             print(f"WARNING: Possible throttling or ban detected for {v_id}: {error_str}")
+        elif '127.0.0.1:4416' in error_str or 'po_token' in error_str.lower():
+            logging.warning(f"PO token service failure for {v_id}: {error_str}")
         else:
             print(f"Error fetching {v_id}: {error_str}")
         return None, None, None
 
 def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
+    if not WEBHOOK:
+        logging.error("Discord webhook not configured, cannot send notification")
+        return
     url = f"https://www.youtube.com/watch?v={v_id}"
     if percentage <= 25:
         color = 0xFFEB3B
@@ -99,7 +127,10 @@ if not os.path.exists(VIDEO_LIST):
 with open(VIDEO_LIST, "r") as f: video_ids = json.load(f)
 
 history_exists = os.path.exists(STATE_FILE)
-history = json.load(open(STATE_FILE, "r", encoding='utf-8')) if history_exists else {}
+history = {}
+if history_exists:
+    with open(STATE_FILE, "r", encoding='utf-8') as f:
+        history = json.load(f)
 
 CHECK_BATCH = 10
 sorted_vids = sorted(video_ids, key=lambda v: history.get(v, {}).get('last_checked', 0))
@@ -111,9 +142,8 @@ for v_id in video_ids_to_check:
         continue
     current_count, _, title = get_yt_data(v_id, deep_scrape=False)
     if current_count is None:
-        print(f"Checking {v_id}...")
-        print(f"Aborting script due to failure fetching {v_id}")
-        sys.exit(1)
+        print(f"WARNING: Skipping {v_id} due to fetch failure")
+        continue
     else:
         print(f"Checking: {title} [{v_id}]")
 
@@ -128,9 +158,8 @@ for v_id in video_ids_to_check:
     if current_count != old_data["count"]:
         _, current_comments, title = get_yt_data(v_id, deep_scrape=True)
         if current_comments is None:
-            display_name = f"{video_title} [{v_id}]" if video_title else v_id
-            print(f"Aborting script due to failure fetching comments for {display_name}")
-            sys.exit(1)
+            print(f"WARNING: Skipping comment comparison for {v_id} due to fetch failure")
+            continue
 
         deletions = []
 

@@ -1,0 +1,42 @@
+name: Monitor Comments
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'  # Run every 20 minutes
+  workflow_dispatch:       # Allow manual trigger
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+      - name: Install dependencies
+        run: pip install yt-dlp requests
+      - name: Install & Run POT Provider
+        run: |
+          # 1. Download the Linux binary for the POT provider
+          curl -L https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/download/v0.7.2/bgutil-pot-linux-x86_64 -o bgutil-pot
+          chmod +x bgutil-pot
+          
+          # 2. Run it in the background on port 4416
+          ./bgutil-pot server --host 127.0.0.1 --port 4416 &
+          
+          # 3. Wait for server to start up (up to 30 seconds)
+          for i in {1..30}; do
+            if nc -z 127.0.0.1 4416; then
+              echo "PO token server is ready"
+              break
+            fi
+            sleep 1
+          done
+          if ! nc -z 127.0.0.1 4416; then
+            echo "PO token server failed to start"
+            exit 1
+          fi
+      - name: Run monitor
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: python monitor.py
