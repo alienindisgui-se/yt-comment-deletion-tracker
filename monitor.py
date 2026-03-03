@@ -15,17 +15,32 @@ if WEBHOOK is None and os.path.exists('.env'):
             if line.startswith('DISCORD_WEBHOOK='):
                 WEBHOOK = line.split('=', 1)[1].strip()
                 break
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+]
 
 def get_yt_data(v_id, deep_scrape=False):
-    time.sleep(random.uniform(2, 5)) # Random delay to look human
+    time.sleep(random.uniform(10, 30)) # Random delay to look human
+    user_agent = random.choice(USER_AGENTS)
     opts = {
         'getcomments': deep_scrape,
         'quiet': True,
         'extract_flat': True,
         'skip_download': True,
-        'user_agent': USER_AGENT,
-        'no_warnings': True
+        'user_agent': user_agent,
+        'no_warnings': True,
+        'http_headers': {
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': random.choice(['en-US,en;q=0.5', 'sv-SE,sv;q=0.9', 'en-GB,en;q=0.8']),
+            'Accept-Encoding': 'gzip, deflate, br',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -35,7 +50,11 @@ def get_yt_data(v_id, deep_scrape=False):
             comments = {c['id']: {'a': c['author'], 't': c['text'], 'ts': c['timestamp']} for c in info.get('comments', [])} if deep_scrape else None
             return count, comments, title
     except Exception as e:
-        print(f"Error fetching {v_id}: {e}")
+        error_str = str(e)
+        if '403' in error_str or 'Forbidden' in error_str or 'throttle' in error_str.lower():
+            print(f"WARNING: Possible throttling or ban detected for {v_id}: {error_str}")
+        else:
+            print(f"Error fetching {v_id}: {error_str}")
         return None, None, None
 
 def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
