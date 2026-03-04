@@ -19,10 +19,9 @@ jobs:
       - name: Fetch free proxy
         run: |
           sudo apt-get update && sudo apt-get install -y jq
-          PROXY_DATA=$(curl -s 'https://proxylist.geonode.com/api/proxy-list?limit=1&sort_by=lastChecked&sort_type=desc&country=US&protocols=http')
-          PROXY_IP=$(echo $PROXY_DATA | jq -r '.[0].ip')
-          PROXY_PORT=$(echo $PROXY_DATA | jq -r '.[0].port')
-          echo "PROXY=http://$PROXY_IP:$PROXY_PORT" >> $GITHUB_ENV
+          PROXY_DATA=$(curl -s 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all')
+          PROXY=$(echo "$PROXY_DATA" | head -1)
+          echo "PROXY=http://$PROXY" >> $GITHUB_ENV
       - name: Install dependencies
         run: pip install yt-dlp requests
       - name: Install & Run POT Provider
