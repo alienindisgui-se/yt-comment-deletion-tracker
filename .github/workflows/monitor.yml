@@ -16,11 +16,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Install youtubeUnblock
+      - name: Fetch free proxy
         run: |
-          curl -L https://github.com/Waujito/youtubeUnblock/releases/download/v1.1.0/youtubeUnblock-linux-amd64 -o youtubeUnblock
-          chmod +x youtubeUnblock
-          sudo ./youtubeUnblock
+          sudo apt-get update && sudo apt-get install -y jq
+          PROXY_DATA=$(curl -s 'https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all')
+          PROXY_IP=$(echo $PROXY_DATA | jq -r '.[0].ip')
+          PROXY_PORT=$(echo $PROXY_DATA | jq -r '.[0].port')
+          echo "PROXY=http://$PROXY_IP:$PROXY_PORT" >> $GITHUB_ENV
       - name: Install dependencies
         run: pip install yt-dlp requests
       - name: Install & Run POT Provider

@@ -67,6 +67,7 @@ USER_AGENTS = [
 def get_yt_data(v_id, deep_scrape=False):
     time.sleep(random.uniform(10, 30)) # Random delay to look human
     user_agent = random.choice(USER_AGENTS)
+    proxy = os.getenv('PROXY')
     opts = {
         'getcomments': deep_scrape,
         'quiet': True,
@@ -76,6 +77,8 @@ def get_yt_data(v_id, deep_scrape=False):
         'no_warnings': True,
         'no_cookies': True
     }
+    if proxy:
+        opts['proxy'] = proxy
     if check_po_token_server():
         opts['extractor_args'] = {'youtube': {'po_token': ['web+http://127.0.0.1:4416']}}
     else:
