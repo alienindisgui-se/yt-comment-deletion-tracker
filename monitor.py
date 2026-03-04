@@ -182,6 +182,12 @@ for v_id in video_ids_to_check:
         print(f"WARNING: Skipping {v_id} due to fetch failure")
         continue
     else:
+        if title == 'Unknown':
+            current_count_retry, _, title_retry = get_yt_data(v_id, deep_scrape=False)
+            if current_count_retry is not None:
+                title = title_retry
+            if title == 'Unknown':
+                print(f"WARNING: Title still unknown after retry for {v_id}, proceeding")
         print(f"Checking: {title} [{v_id}]")
 
     video_title = title if current_count is not None else None
