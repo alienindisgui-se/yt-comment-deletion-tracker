@@ -74,7 +74,8 @@ def get_yt_data(v_id, deep_scrape=False):
         'skip_download': True,
         'user_agent': user_agent,
         'no_warnings': True,
-        'no_cookies': True
+        'no_cookies': True,
+        'proxy': 'socks5://127.0.0.1:9050'
     }
     if check_po_token_server():
         opts['extractor_args'] = {'youtube': {'po_token': ['web+http://127.0.0.1:4416']}}
