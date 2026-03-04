@@ -17,8 +17,9 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install dependencies
-        run: pip install yt-dlp requests
-        playwright install --with-deps
+        run: |
+          pip install yt-dlp requests
+          playwright install --with-deps
       - name: Run monitor
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
