@@ -8,6 +8,8 @@ import sys
 import logging
 import socket
 
+sys.stdout.reconfigure(encoding='utf-8')
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 VIDEO_LIST = "videos.json"
 STATE_FILE = "comment_state.json"

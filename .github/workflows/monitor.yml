@@ -25,8 +25,8 @@ jobs:
           sudo apt-get update && sudo apt-get install -y cloudflare-warp
       - name: Connect to Cloudflare WARP
         run: |
-          warp-cli --accept-tos register
-          warp-cli --accept-tos connect
+          warp-cli registration new --accept-tos
+          warp-cli connect
       - name: Install dependencies
         run: pip install yt-dlp requests
       - name: Install & Run POT Provider
