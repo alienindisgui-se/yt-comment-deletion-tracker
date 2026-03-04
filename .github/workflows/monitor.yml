@@ -18,7 +18,7 @@ jobs:
           python-version: '3.12'
       - name: Install dependencies
         run: |
-          pip install yt-dlp requests
+          pip install yt-dlp requests playwright
           playwright install --with-deps
       - name: Run monitor
         env:
