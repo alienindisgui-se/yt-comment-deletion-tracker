@@ -7,6 +7,7 @@ import random
 import sys
 import logging
 import socket
+from playwright.sync_api import sync_playwright
 
 sys.stdout.reconfigure(encoding='utf-8')
 
@@ -65,43 +66,71 @@ USER_AGENTS = [
 ]
 
 def get_yt_data(v_id, deep_scrape=False):
-    time.sleep(random.uniform(10, 30)) # Random delay to look human
+    time.sleep(random.uniform(10, 30))  # Random delay to look human
     user_agent = random.choice(USER_AGENTS)
-    proxy = os.getenv('PROXY')
-    opts = {
-        'getcomments': deep_scrape,
-        'quiet': True,
-        'extract_flat': True,
-        'skip_download': True,
-        'user_agent': user_agent,
-        'no_warnings': True,
-        'no_cookies': True
-    }
-    if proxy:
-        opts['proxy'] = proxy
-    if check_po_token_server():
-        opts['extractor_args'] = {'youtube': {'po_token': ['web+http://127.0.0.1:4416']}}
-    else:
-        logging.info("PO token server not available, proceeding without PO tokens")
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(f"https://www.youtube.com/watch?v={v_id}", download=False)
-            count = info.get('comment_count', 0)
-            title = info.get('title', 'Unknown')
-            comments = {c['id']: {'a': c['author'], 't': c['text'], 'ts': c['timestamp']} for c in info.get('comments', [])} if deep_scrape else None
+    
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(user_agent=user_agent)
+        page = context.new_page()
+        
+        try:
+            page.goto(f"https://www.youtube.com/watch?v={v_id}", timeout=30000)
+            page.wait_for_load_state('networkidle')
+            
+            # Get title
+            title_elem = page.locator('h1.ytd-watch-metadata yt-formatted-string')
+            title = title_elem.text_content().strip() if title_elem.count() > 0 else 'Unknown'
+            
+            # Get comment count
+            count_elem = page.locator('yt-formatted-string#count yt-formatted-string')
+            count_text = count_elem.text_content().strip() if count_elem.count() > 0 else '0'
+            count = int(''.join(filter(str.isdigit, count_text))) if count_text else 0
+            
+            comments = None
+            if deep_scrape:
+                comments = {}
+                
+                # Scroll to comments section
+                comments_section = page.locator('ytd-comments#comments')
+                if comments_section.count() > 0:
+                    comments_section.scroll_into_view_if_needed()
+                    page.wait_for_timeout(3000)  # Wait for comments to load
+                    
+                    # Get comment threads
+                    comment_threads = page.locator('ytd-comment-thread-renderer')
+                    for i in range(min(comment_threads.count(), 50)):  # Limit to 50 comments
+                        thread = comment_threads.nth(i)
+                        
+                        author_elem = thread.locator('#author-text')
+                        text_elem = thread.locator('#content-text')
+                        time_elem = thread.locator('#published-time-text')
+                        
+                        author = author_elem.text_content().strip() if author_elem.count() > 0 else ''
+                        text = text_elem.text_content().strip() if text_elem.count() > 0 else ''
+                        timestamp_str = time_elem.text_content().strip() if time_elem.count() > 0 else ''
+                        
+                        # Approximate timestamp
+                        ts = int(time.time())
+                        id_ = str(hash(author + text + timestamp_str))
+                        
+                        comments[id_] = {'a': author, 't': text, 'ts': ts}
+            
             return count, comments, title
-    except Exception as e:
-        error_str = str(e)
-        if 'Sign in to confirm you’re not a bot' in error_str:
-            logging.error(f"Bot detection triggered for {v_id}: {error_str}")
-            sys.exit(1)
-        if '403' in error_str or 'Forbidden' in error_str or 'throttle' in error_str.lower():
-            print(f"WARNING: Possible throttling or ban detected for {v_id}: {error_str}")
-        elif '127.0.0.1:4416' in error_str or 'po_token' in error_str.lower():
-            logging.warning(f"PO token service failure for {v_id}: {error_str}")
-        else:
-            print(f"Error fetching {v_id}: {error_str}")
-        return None, None, None
+            
+        except Exception as e:
+            error_str = str(e)
+            if 'Sign in to confirm you’re not a bot' in error_str:
+                logging.error(f"Bot detection triggered for {v_id}: {error_str}")
+                sys.exit(1)
+            if '403' in error_str or 'Forbidden' in error_str or 'throttle' in error_str.lower():
+                print(f"WARNING: Possible throttling or ban detected for {v_id}: {error_str}")
+            else:
+                print(f"Error fetching {v_id}: {error_str}")
+            return None, None, None
+        
+        finally:
+            browser.close()
 
 def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
     if not WEBHOOK:
