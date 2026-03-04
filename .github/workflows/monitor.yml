@@ -1,6 +1,8 @@
 name: Monitor Comments
 
 on:
+  schedule:
+    - cron: '0 * * * *'  # Run every 1 hour
   workflow_dispatch:       # Allow manual trigger
 
 jobs:
