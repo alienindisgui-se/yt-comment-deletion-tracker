@@ -23,7 +23,7 @@ jobs:
           pip install playwright
           playwright install --with-deps
       - name: Run fetch script
-        run: python fetchLatestVideos.py
+        run: python fetch_latest_videos.py
       - name: Commit and Push changes
         run: |
           git config --global user.name "Watchdog Bot"
