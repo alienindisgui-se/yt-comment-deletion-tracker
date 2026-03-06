@@ -1,8 +1,8 @@
-name: Monitor Comments
+name: Fetch Latest Videos
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Run every 1 hour
+    - cron: '0 19 * * *' 
   workflow_dispatch:       # Allow manual trigger
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
     concurrency:
       group: ${{ github.workflow }}
     permissions:
-      contents: write # Crucial for saving the state file
+      contents: write # Crucial for saving the videos file
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,16 +20,14 @@ jobs:
           python-version: '3.12'
       - name: Install dependencies
         run: |
-          pip install yt-dlp requests playwright
+          pip install playwright
           playwright install --with-deps
-      - name: Run monitor
-        env:
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-        run: python monitor.py
+      - name: Run fetch script
+        run: python fetchLatestVideos.py
       - name: Commit and Push changes
         run: |
           git config --global user.name "Watchdog Bot"
           git config --global user.email "bot@github.com"
-          git add comment_state.json
-          git commit -m "Update comment state" || exit 0
+          git add videos.json
+          git commit -m "Update latest videos" || exit 0
           git push
