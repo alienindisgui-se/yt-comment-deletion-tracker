@@ -17,14 +17,6 @@ VIDEO_LIST = "videos.json"
 STATE_FILE = "comment_state.json"
 WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 
-# Fallback for .env file
-if WEBHOOK is None and os.path.exists('.env'):
-    with open('.env', 'r') as f:
-        for line in f:
-            if line.startswith('DISCORD_WEBHOOK='):
-                WEBHOOK = line.split('=', 1)[1].strip()
-                break
-
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
@@ -126,7 +118,7 @@ def get_yt_data(v_id, deep_scrape=False):
                     logging.info(f"Current top-level threads: {current_thread}")
                     if current_thread == last_thread_count:
                         no_change += 1
-                        if no_change >= 12:
+                        if no_change >= 3:
                             logging.info(f"Loaded {current_thread} top-level threads.")
                             break
                     else:
@@ -136,53 +128,53 @@ def get_yt_data(v_id, deep_scrape=False):
                     logging.info("Scrolled to bottom for thread loading.")
                     page.wait_for_timeout(5000)
 
-                # # Phase 2: Iterative expansion of replies with individual dispatching
-                # logging.info("Expanding all nested replies iteratively...")
-                # expansion_iterations = 0
-                # max_iterations = 2  # You can adjust back if needed
-                # zero_click_count = 0
-                # while expansion_iterations < max_iterations:
-                #     expansion_iterations += 1
-                #     locators = page.locator('ytd-button-renderer#more-replies').all()
-                #     button_count = len(locators)
-                #     logging.info(f"Iteration {expansion_iterations}: Found {button_count} expansion buttons.")
-                #     if button_count == 0:
-                #         logging.info("No more expansion buttons found. Expansion complete.")
-                #         break
+                # Phase 2: Iterative expansion of replies with individual dispatching
+                logging.info("Expanding all nested replies iteratively...")
+                expansion_iterations = 0
+                max_iterations = 2  # You can adjust back if needed
+                zero_click_count = 0
+                while expansion_iterations < max_iterations:
+                    expansion_iterations += 1
+                    locators = page.locator('ytd-button-renderer#more-replies').all()
+                    button_count = len(locators)
+                    logging.info(f"Iteration {expansion_iterations}: Found {button_count} expansion buttons.")
+                    if button_count == 0:
+                        logging.info("No more expansion buttons found. Expansion complete.")
+                        break
                     
-                #     clicked = 0
-                #     for i, loc in enumerate(locators):
-                #         logging.info(f"Iteration {expansion_iterations}: Attempting to dispatch click on button {i+1}/{button_count}.")
-                #         try:
-                #             loc.scroll_into_view_if_needed(timeout=5000)
-                #             logging.info(f"Iteration {expansion_iterations}: Button {i+1} scrolled into view.")
-                #             loc.dispatch_event('click')
-                #             clicked += 1
-                #             page.wait_for_timeout(3000)  # Increased wait for replies to load
-                #             logging.info(f"Iteration {expansion_iterations}: Successfully dispatched click on button {i+1}/{button_count}.")
-                #         except Exception as e:
-                #             logging.debug(f"Iteration {expansion_iterations}: Failed to dispatch click on button {i+1}/{button_count}: {e}")
+                    clicked = 0
+                    for i, loc in enumerate(locators):
+                        logging.info(f"Iteration {expansion_iterations}: Attempting to click on button {i+1}/{button_count}.")
+                        try:
+                            loc.scroll_into_view_if_needed(timeout=5000)
+                            logging.info(f"Iteration {expansion_iterations}: Button {i+1} scrolled into view.")
+                            loc.click()
+                            clicked += 1
+                            page.wait_for_timeout(3000)  # Increased wait for replies to load
+                            logging.info(f"Iteration {expansion_iterations}: Successfully clicked button {i+1}/{button_count}.")
+                        except Exception as e:
+                            logging.debug(f"Iteration {expansion_iterations}: Failed to click button {i+1}/{button_count}: {e}")
+                        
+                    logging.info(f"Iteration {expansion_iterations}: Dispatched {clicked} clicks in total.")
+                    if clicked == 0:
+                        zero_click_count += 1
+                        if zero_click_count >= 3:
+                            logging.warning("Three consecutive iterations with zero dispatches despite buttons found. Breaking to avoid loop.")
+                            break
+                    else:
+                        zero_click_count = 0
                     
-                #     logging.info(f"Iteration {expansion_iterations}: Dispatched {clicked} clicks in total.")
-                #     if clicked == 0:
-                #         zero_click_count += 1
-                #         if zero_click_count >= 3:
-                #             logging.warning("Three consecutive iterations with zero dispatches despite buttons found. Breaking to avoid loop.")
-                #             break
-                #     else:
-                #         zero_click_count = 0
-                    
-                #     page.evaluate("document.scrollingElement.scrollTop = document.scrollingElement.scrollHeight")
-                #     logging.info("Scrolled to bottom after expansion attempt.")
-                #     page.wait_for_timeout(5000)
+                    page.evaluate("document.scrollingElement.scrollTop = document.scrollingElement.scrollHeight")
+                    logging.info("Scrolled to bottom after expansion attempt.")
+                    page.wait_for_timeout(5000)
 
-                # if expansion_iterations >= max_iterations:
-                #     logging.warning(f"Reached maximum expansion iterations ({max_iterations}). Proceeding to extraction.")
+                if expansion_iterations >= max_iterations:
+                    logging.warning(f"Reached maximum expansion iterations ({max_iterations}). Proceeding to extraction.")
 
-                # # Phase 3: Final scroll to ensure all loaded
-                # logging.info("Performing final scroll to load any remaining content...")
-                # page.evaluate("document.scrollingElement.scrollTop = document.scrollingElement.scrollHeight")
-                # page.wait_for_timeout(5000)
+                # Phase 3: Final scroll to ensure all loaded
+                logging.info("Performing final scroll to load any remaining content...")
+                page.evaluate("document.scrollingElement.scrollTop = document.scrollingElement.scrollHeight")
+                page.wait_for_timeout(5000)
 
                 # Extract all loaded comments
                 logging.info("Extracting all loaded comments...")
@@ -198,7 +190,15 @@ def get_yt_data(v_id, deep_scrape=False):
                         if c_id in comments:
                             logging.debug(f"Duplicate comment detected at index {i}: {text[:50]}...")
                         else:
-                            comments[c_id] = {'a': author, 't': text, 'ts': int(time.time())}
+                            comments[c_id] = {
+                                'a': author,
+                                't': text,
+                                'ts_posted': int(time.time()),  # Approximate posted time, since scraping doesn't provide exact
+                                'created_at': int(time.time()),
+                                'lastSeen': int(time.time()),
+                                'deleted': False,
+                                'notFoundCounter': 0
+                            }
                     except Exception as e:
                         logging.warning(f"Failed to extract comment {i}: {e}")
                 
@@ -258,37 +258,62 @@ if os.path.exists(STATE_FILE):
     logging.info("Loaded existing comment state.")
 
 for v_id in video_ids:
-    ui_count, _, title = get_yt_data(v_id, deep_scrape=False)
-    if ui_count is None: 
-        logging.warning(f"Skipping video {v_id} due to loading failure.")
+    logging.info(f"Processing video {v_id}.")
+    
+    # Always perform deep scrape to get current comments
+    _, current_comments, title = get_yt_data(v_id, deep_scrape=True)
+    if current_comments is None:
+        logging.warning(f"Skipping video {v_id} due to scraping failure.")
         continue
-
+    
     old_state = history.get(v_id, {"count": 0, "comments": {}})
     logging.info(f"Previous state for {v_id}: {old_state['count']} comments.")
     
-    if ui_count != old_state["count"] or not old_state["comments"]:
-        if ui_count != old_state["count"]:
-            logging.info(f"Comment count changed from {old_state['count']} to {ui_count}. Performing deep scrape.")
+    updated_comments = {}
+    deletions = []
+    
+    # Process existing comments
+    for c_id, comment_data in old_state["comments"].items():
+        if c_id in current_comments:
+            # Comment found, update lastSeen and reset counter
+            updated_comments[c_id] = comment_data.copy()
+            updated_comments[c_id]['lastSeen'] = int(time.time())
+            updated_comments[c_id]['notFoundCounter'] = 0
+            logging.debug(f"Comment {c_id} still present, updated lastSeen.")
         else:
-            logging.info("No previous comments stored. Performing initial deep scrape.")
-        _, current_comments, _ = get_yt_data(v_id, deep_scrape=True)
-        
-        if current_comments:
-            if old_state["comments"]:
-                deletions = [data for c_id, data in old_state["comments"].items() if c_id not in current_comments]
-                if deletions:
-                    logging.info(f"Detected {len(deletions)} deleted comments for video {v_id}.")
-                    perc = (len(deletions) / len(old_state["comments"]) * 100)
-                    for d in deletions:
-                        send_deletion_alert(d['a'], d['t'], v_id, d['ts'], time.time(), perc, title)
-
-            history[v_id] = {
-                "count": len(current_comments) if current_comments else ui_count,
-                "comments": current_comments,
-                "title": title,
-                "last_checked": time.time()
-            }
-            logging.info(f"Updated state for video {v_id} with {len(current_comments)} comments.")
+            # Comment not found, increment counter
+            updated_comments[c_id] = comment_data.copy()
+            updated_comments[c_id]['notFoundCounter'] = comment_data.get('notFoundCounter', 0) + 1
+            logging.debug(f"Comment {c_id} not found, counter now {updated_comments[c_id]['notFoundCounter']}.")
+            
+            # Check if should mark as deleted
+            if updated_comments[c_id]['notFoundCounter'] >= 3 and not comment_data.get('deleted', False):
+                updated_comments[c_id]['deleted'] = True
+                deletions.append(updated_comments[c_id])
+    
+    # Add new comments
+    for c_id, comment_data in current_comments.items():
+        if c_id not in updated_comments:
+            updated_comments[c_id] = comment_data.copy()
+            logging.debug(f"Added new comment {c_id}.")
+    
+    # Send alerts for newly detected deletions
+    if deletions:
+        total_tracked = len([c for c in updated_comments.values() if not c.get('deleted', False)])
+        perc = (len(deletions) / max(total_tracked + len(deletions), 1)) * 100  # Approximate percentage
+        logging.info(f"Detected {len(deletions)} new deletions for video {v_id}.")
+        for d in deletions:
+            logging.info(f"Marking as deleted: {d['a']} - {d['t'][:100]}...")
+            send_deletion_alert(d['a'], d['t'], v_id, d.get('ts_posted', d.get('ts', time.time())), time.time(), perc, title)
+    
+    # Update history
+    history[v_id] = {
+        "count": len(current_comments),
+        "comments": updated_comments,
+        "title": title,
+        "last_checked": time.time()
+    }
+    logging.info(f"Updated state for video {v_id} with {len(updated_comments)} comments.")
 
 with open(STATE_FILE, "w", encoding='utf-8') as f:
     json.dump(history, f, indent=2, ensure_ascii=False)
