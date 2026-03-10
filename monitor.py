@@ -2,6 +2,7 @@ import json
 import os
 import requests
 import time
+import datetime
 import random
 import sys
 import logging
@@ -26,6 +27,22 @@ USER_AGENTS = [
 def generate_persistent_id(author, text):
     raw_str = f"{author}|{text}"
     return hashlib.md5(raw_str.encode('utf-8')).hexdigest()
+
+def to_unix(ts):
+    if isinstance(ts, str):
+        return datetime.datetime.fromisoformat(ts).timestamp()
+    return ts
+
+def migrate_timestamps(obj):
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if key in ['ts_posted', 'created_at', 'lastSeen', 'last_checked'] and isinstance(value, (int, float)):
+                obj[key] = datetime.datetime.fromtimestamp(value).isoformat()
+            else:
+                migrate_timestamps(value)
+    elif isinstance(obj, list):
+        for item in obj:
+            migrate_timestamps(item)
 
 def get_yt_data(v_id, deep_scrape=False):
     user_agent = random.choice(USER_AGENTS)
@@ -189,9 +206,9 @@ def get_yt_data(v_id, deep_scrape=False):
                             comments[c_id] = {
                                 'a': author,
                                 't': text,
-                                'ts_posted': int(time.time()),  # Approximate posted time, since scraping doesn't provide exact
-                                'created_at': int(time.time()),
-                                'lastSeen': int(time.time()),
+                                'ts_posted': datetime.datetime.now().isoformat(),  # Approximate posted time, since scraping doesn't provide exact
+                                'created_at': datetime.datetime.now().isoformat(),
+                                'lastSeen': datetime.datetime.now().isoformat(),
                                 'deleted': False,
                                 'notFoundCounter': 0
                             }
@@ -221,7 +238,7 @@ def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
     payload = {
         "embeds": [{
             "title": "🚨 Deleted Comment Detected",
-            "description": f"**Author:** `{author}`\n**Content:** {text[:800]}\n**Posted:** <t:{int(ts)}:f>\n**Deleted:** <t:{int(deleted_at)}:f>\n\n**{percentage:.1f}%** of tracked comments removed.",
+            "description": f"**Author:** `{author}`\n**Content:** {text[:800]}\n**Posted:** <t:{int(to_unix(ts))}:f>\n**Deleted:** <t:{int(to_unix(deleted_at))}:f>\n\n**{percentage:.1f}%** of tracked comments removed.",
             "color": color,
             "fields": [{"name": title, "value": f"[View Video](https://www.youtube.com/watch?v={v_id})", "inline": True}],
             "footer": {"text": f"Video ID: {v_id}"}
@@ -231,7 +248,6 @@ def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
         response = requests.post(WEBHOOK, json=payload)
         if response.status_code == 204:
             logging.info("Deletion alert sent successfully to Discord.")
-        else:
             logging.error(f"Failed to send alert: Status {response.status_code} - {response.text}")
     except Exception as e:
         logging.error(f"Webhook failed: {e}")
@@ -252,6 +268,7 @@ if os.path.exists(STATE_FILE):
     with open(STATE_FILE, "r", encoding='utf-8') as f:
         history = json.load(f)
     logging.info("Loaded existing comment state.")
+    migrate_timestamps(history)
 
 for v_id in video_ids:
     logging.info(f"Processing video {v_id}.")
@@ -273,7 +290,7 @@ for v_id in video_ids:
         if c_id in current_comments:
             # Comment found, update lastSeen and reset counter
             updated_comments[c_id] = comment_data.copy()
-            updated_comments[c_id]['lastSeen'] = int(time.time())
+            updated_comments[c_id]['lastSeen'] = datetime.datetime.now().isoformat()
             updated_comments[c_id]['notFoundCounter'] = 0
             logging.debug(f"Comment {c_id} still present, updated lastSeen.")
         else:
@@ -300,14 +317,14 @@ for v_id in video_ids:
         logging.info(f"Detected {len(deletions)} new deletions for video {v_id}.")
         for d in deletions:
             logging.info(f"Marking as deleted: {d['a']} - {d['t'][:100]}...")
-            send_deletion_alert(d['a'], d['t'], v_id, d.get('ts_posted', d.get('ts', time.time())), time.time(), perc, title)
+            send_deletion_alert(d['a'], d['t'], v_id, d.get('ts_posted', d.get('ts', time.time())), datetime.datetime.now().isoformat(), perc, title)
     
     # Update history
     history[v_id] = {
         "count": len(current_comments),
         "comments": updated_comments,
         "title": title,
-        "last_checked": time.time()
+        "last_checked": datetime.datetime.now().isoformat()
     }
     logging.info(f"Updated state for video {v_id} with {len(updated_comments)} comments.")
 
