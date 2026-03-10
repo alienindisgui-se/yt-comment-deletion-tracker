@@ -32,4 +32,5 @@ jobs:
           git config --global user.email "bot@github.com"
           git add comment_state.json
           git commit -m "Update comment state" || exit 0
+          git pull --rebase
           git push
