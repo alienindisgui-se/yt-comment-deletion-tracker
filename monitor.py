@@ -128,48 +128,44 @@ def get_yt_data(v_id, deep_scrape=False):
                     logging.info("Scrolled to bottom for thread loading.")
                     page.wait_for_timeout(5000)
 
-                # Phase 2: Iterative expansion of replies with individual dispatching
-                logging.info("Expanding all nested replies iteratively...")
-                expansion_iterations = 0
-                max_iterations = 2  # You can adjust back if needed
-                zero_click_count = 0
-                while expansion_iterations < max_iterations:
-                    expansion_iterations += 1
-                    locators = page.locator('ytd-button-renderer#more-replies').all()
-                    button_count = len(locators)
-                    logging.info(f"Iteration {expansion_iterations}: Found {button_count} expansion buttons.")
-                    if button_count == 0:
-                        logging.info("No more expansion buttons found. Expansion complete.")
-                        break
-                    
-                    clicked = 0
-                    for i, loc in enumerate(locators):
-                        logging.info(f"Iteration {expansion_iterations}: Attempting to click on button {i+1}/{button_count}.")
-                        try:
-                            loc.scroll_into_view_if_needed(timeout=5000)
-                            logging.info(f"Iteration {expansion_iterations}: Button {i+1} scrolled into view.")
-                            loc.click()
-                            clicked += 1
-                            page.wait_for_timeout(3000)  # Increased wait for replies to load
-                            logging.info(f"Iteration {expansion_iterations}: Successfully clicked button {i+1}/{button_count}.")
-                        except Exception as e:
-                            logging.debug(f"Iteration {expansion_iterations}: Failed to click button {i+1}/{button_count}: {e}")
+                # Phase 2: Expand replies using JavaScript to bypass actionability checks
+                logging.info("Expanding nested replies via JavaScript injection...")
+                max_iterations = 3  # Run a few times in case clicking reveals nested "show more" buttons
+                
+                for i in range(max_iterations):
+                    try:
+                        # Inject JS to find all reply buttons and click them directly in the DOM
+                        clicks_dispatched = page.evaluate("""() => {
+                            const buttons = Array.from(document.querySelectorAll('ytd-button-renderer#more-replies button'));
+                            let count = 0;
+                            for (let btn of buttons) {
+                                // Basic check to ensure the button is actually rendered in the DOM
+                                if (btn.offsetParent !== null) { 
+                                    btn.click();
+                                    count++;
+                                }
+                            }
+                            return count;
+                        }""")
                         
-                    logging.info(f"Iteration {expansion_iterations}: Dispatched {clicked} clicks in total.")
-                    if clicked == 0:
-                        zero_click_count += 1
-                        if zero_click_count >= 3:
-                            logging.warning("Three consecutive iterations with zero dispatches despite buttons found. Breaking to avoid loop.")
+                        logging.info(f"Iteration {i+1}: Dispatched {clicks_dispatched} clicks via JS.")
+                        
+                        if clicks_dispatched == 0:
+                            logging.info("No more expansion buttons found. Expansion complete.")
                             break
-                    else:
-                        zero_click_count = 0
-                    
-                    page.evaluate("document.scrollingElement.scrollTop = document.scrollingElement.scrollHeight")
-                    logging.info("Scrolled to bottom after expansion attempt.")
-                    page.wait_for_timeout(5000)
+                            
+                        # Wait a moment for the requested replies to render in the DOM
+                        page.wait_for_timeout(4000)
+                        
+                        # Scroll down to ensure we trigger any lazy-loaded elements
+                        page.evaluate("document.scrollingElement.scrollTop = document.scrollingElement.scrollHeight")
+                        page.wait_for_timeout(2000)
+                        
+                    except Exception as e:
+                        logging.warning(f"Iteration {i+1} JS click failed: {str(e).splitlines()[0]}")
+                        break
 
-                if expansion_iterations >= max_iterations:
-                    logging.warning(f"Reached maximum expansion iterations ({max_iterations}). Proceeding to extraction.")
+                logging.info("Proceeding to final extraction.")
 
                 # Phase 3: Final scroll to ensure all loaded
                 logging.info("Performing final scroll to load any remaining content...")
