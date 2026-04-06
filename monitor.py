@@ -218,7 +218,7 @@ def get_yt_data(v_id, deep_scrape=False):
                     digits = ''.join(filter(str.isdigit, count_text))
                     if digits:
                         ui_count = int(digits)
-                        logging.info(f"Extracted comment count using {desc}: {ui_count}")
+                        # logging.info(f"Extracted comment count using {desc}: {ui_count}")
                         break
                 except TimeoutError:
                     logging.debug(f"Timeout waiting for count locator: {desc}")
@@ -358,14 +358,13 @@ def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
     except Exception as e:
         logging.error(f"Webhook failed: {e}")
 
-# --- MAIN LOGIC ---
 # Start total runtime timer
 script_start_time = time.time()
 
 # Fetch latest videos from channels before processing
 channels_env = os.getenv('CHANNELS_LIST')
 logging.info(f"CHANNELS_LIST environment variable: '{channels_env}'")
-channels = channels_env.split(',') if channels_env else []
+channels = channels_env.split(',') if channels_env and channels_env != 'None' else []
 
 if channels:
     fetched_videos = fetch_latest_videos(channels)
