@@ -363,7 +363,7 @@ def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
 script_start_time = time.time()
 
 # Fetch latest videos from channels before processing
-channels_env = os.getenv('CHANNELS_LIST', '')
+channels_env = os.getenv('CHANNELS_LIST')
 logging.info(f"CHANNELS_LIST environment variable: '{channels_env}'")
 channels = channels_env.split(',') if channels_env else []
 
