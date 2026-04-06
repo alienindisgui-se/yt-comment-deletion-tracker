@@ -2,7 +2,7 @@ name: Monitor Comments
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # Runs at minute 0 and 30 of every hour
+    - cron: '*/10 * * * *'  # Runs at minute 0 and 30 of every hour
   workflow_dispatch:       # Allow manual trigger
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
           python-version: '3.12'
       - name: Install dependencies
         run: |
-          pip install yt-dlp requests playwright
+          pip install -r requirements.txt
           playwright install --with-deps
       - name: Run monitor
         env:
@@ -31,6 +31,7 @@ jobs:
           git config --global user.name "Watchdog Bot"
           git config --global user.email "bot@github.com"
           git add comment_state.json
+          git add videos.json
           git commit -m "Update comment state" || exit 0
           git pull --rebase
           git push
