@@ -2,7 +2,7 @@ name: Monitor Comments
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # Runs at minute 0 and 30 of every hour
+    - cron: '*/15 * * * *'  # Runs at minute 0 and 30 of every hour
   workflow_dispatch:       # Allow manual trigger
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
           python-version: '3.12'
       - name: Install dependencies
         run: |
-          pip install yt-dlp requests playwright
+          pip install -r requirements.txt
           playwright install --with-deps
       - name: Run monitor
         env:

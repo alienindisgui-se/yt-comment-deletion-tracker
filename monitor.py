@@ -519,7 +519,6 @@ for v_id in video_ids:
         perc = (len(deletions) / max(total_tracked + len(deletions), 1)) * 100  # Approximate percentage
         logging.info(f"Detected {len(deletions)} new deletions for video {v_id}.")
         for d in deletions:
-            logging.info(f"Marking as deleted: {d['a']} - {d['t'][:100]}...")
             send_deletion_alert(d['a'], d['t'], v_id, d.get('firstSeen', d.get('ts_posted', d.get('ts', datetime.now().isoformat()))), datetime.now().isoformat(), perc, title)
     
     # Track statistics for this video
@@ -531,7 +530,6 @@ for v_id in video_ids:
         logging.info(f"Video '{title}[{v_id}]' changes: +{video_new_comments} new, -{video_deleted_count} deleted")
     else:
         videos_with_no_changes += 1
-        logging.info(f"Video '{title}[{v_id}]' no changes detected")
     
     # Update global statistics
     total_new_comments += video_new_comments
