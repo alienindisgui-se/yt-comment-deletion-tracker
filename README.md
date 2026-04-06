@@ -1,6 +1,9 @@
 # YT Comment Deletion Tracker
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+![AI Assisted](https://img.shields.io/badge/AI%20Assisted-purple?style=for-the-badge)
+![Python](https://img.shields.io/badge/python-3670A0?style=for-the-badge&logo=python&logoColor=ffdd54)
+![Repo Size](https://img.shields.io/github/repo-size/alienindisgui-se/yt-comment-deletion-tracker?style=for-the-badge&color=blue)
+![License](https://img.shields.io/github/license/alienindisgui-se/yt-comment-deletion-tracker?style=for-the-badge&color=green)
 
 A stealthy, automated monitor for tracking deleted comments on YouTube videos. Uses advanced techniques to avoid detection while reliably detecting and alerting on comment deletions.
 
@@ -23,6 +26,8 @@ This Python-based tool continuously monitors a list of YouTube videos for commen
 - Python 3.7+
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) (YouTube downloader)
 - [requests](https://pypi.org/project/requests/) (HTTP library)
+- [playwright](https://playwright.dev/) (Browser automation)
+- [python-dotenv](https://pypi.org/project/python-dotenv/) (Environment variable management)
 
 ## 📦 Installation
 
@@ -34,7 +39,8 @@ This Python-based tool continuously monitors a list of YouTube videos for commen
 
 2. **Install dependencies:**
    ```bash
-   pip install yt-dlp requests
+   pip install -r requirements.txt
+   playwright install --with-deps
    ```
 
 ## ⚙️ Configuration
@@ -67,6 +73,19 @@ Edit `videos.json` to include the YouTube video IDs you want to monitor:
 
 - Video IDs must be exactly 11 characters
 - Invalid IDs are automatically skipped with warnings
+
+### 3. Channel Monitoring (Optional)
+For automatic video fetching from YouTube channels, set the `CHANNELS_LIST` environment variable:
+```bash
+export CHANNELS_LIST="CHANNEL_ID_1,CHANNEL_ID_2"
+```
+
+Or add to your `.env` file:
+```
+CHANNELS_LIST=CHANNEL_ID_1,CHANNEL_ID_2
+```
+
+When configured, the monitor will automatically fetch the latest videos from these channels and add them to the monitoring list.
 
 ### 3. YouTube Bot Bypass (Automatic in CI)
 The GitHub Actions workflow automatically handles YouTube's bot detection by:
@@ -118,23 +137,39 @@ python monitor.py
 
    on:
      schedule:
-       - cron: '*/20 * * * *'  # Run every 20 minutes
+       - cron: '*/10 * * * *'  # Run every 10 minutes
      workflow_dispatch:       # Allow manual trigger
 
    jobs:
      monitor:
        runs-on: ubuntu-latest
+       timeout-minutes: 30
+       concurrency:
+         group: ${{ github.workflow }}
+       permissions:
+         contents: write # Crucial for saving the state file
        steps:
-         - uses: actions/checkout@v3
-         - uses: actions/setup-python@v4
+         - uses: actions/checkout@v4
+         - uses: actions/setup-python@v5
            with:
-             python-version: '3.9'
+             python-version: '3.12'
          - name: Install dependencies
-           run: pip install yt-dlp requests
+           run: |
+             pip install -r requirements.txt
+             playwright install --with-deps
          - name: Run monitor
            env:
              DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
            run: python monitor.py
+         - name: Commit and Push changes
+           run: |
+             git config --global user.name "Watchdog Bot"
+             git config --global user.email "bot@github.com"
+             git add comment_state.json
+             git add videos.json
+             git commit -m "Update comment state" || exit 0
+             git pull --rebase
+             git push
    ```
 
 ### First Run
@@ -176,6 +211,7 @@ yt-comment-deletion-tracker/
 ├── monitor.py              # Main monitoring script
 ├── videos.json             # List of video IDs to monitor
 ├── comment_state.json      # Persistent state (auto-generated)
+├── requirements.txt         # Python dependencies
 ├── .env                    # Environment variables (optional)
 ├── .gitignore              # Git ignore rules
 ├── LICENSE                 # MIT License
@@ -194,8 +230,8 @@ Contributions are welcome! Please:
 
 ### Development Setup
 ```bash
-# Install development dependencies (if any)
-pip install -r requirements-dev.txt  # Create if needed
+# Install development dependencies
+pip install -r requirements.txt
 
 # Run tests (add if you create them)
 pytest
