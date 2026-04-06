@@ -87,8 +87,6 @@ def fetch_latest_videos(channels):
                 page.wait_for_timeout(3000)
                 
                 # Find the first video link
-                rich_count = page.locator('ytd-rich-item-renderer').count()
-                link_count = page.locator('ytd-rich-item-renderer a[href*="/watch?v="]').count()
                 video_locator = page.locator('ytd-rich-item-renderer a[href*="/watch?v="]').first
                 if video_locator.count() > 0:
                     href = video_locator.get_attribute('href')
@@ -218,7 +216,6 @@ def get_yt_data(v_id, deep_scrape=False):
                     digits = ''.join(filter(str.isdigit, count_text))
                     if digits:
                         ui_count = int(digits)
-                        # logging.info(f"Extracted comment count using {desc}: {ui_count}")
                         break
                 except TimeoutError:
                     logging.debug(f"Timeout waiting for count locator: {desc}")
@@ -283,36 +280,6 @@ def get_yt_data(v_id, deep_scrape=False):
                             })
                     except Exception as e:
                         logging.warning(f"Failed to extract comment {i}: {e}")
-                
-                # # Save timestamps to separate JSON file for debugging
-                # timestamps_data = []
-                # for i in range(extracted_count):
-                #     try:
-                #         author = author_locs.nth(i).text_content().strip()
-                #         text = text_locs.nth(i).text_content().strip()
-                #         time_text = time_locs.nth(i).text_content().strip() if time_locs.count() > i else "NO_TIMESTAMP_FOUND"
-                        
-                #         timestamps_data.append({
-                #             'index': i,
-                #             'author': author,
-                #             'text_preview': text[:100] + "..." if len(text) > 100 else text,
-                #             'timestamp': time_text
-                #         })
-                #     except Exception as e:
-                #         timestamps_data.append({
-                #             'index': i,
-                #             'author': "EXTRACTION_ERROR",
-                #             'text_preview': "",
-                #             'timestamp': f"ERROR: {e}"
-                #         })
-                
-                # # Save timestamps data
-                # timestamps_filename = f"timestamps_{v_id}.json"
-                # with open(timestamps_filename, "w", encoding='utf-8') as f:
-                #     json.dump(timestamps_data, f, indent=2, ensure_ascii=False)
-                
-                # if ui_count == 0 and len(comments) > 0:
-                #     ui_count = len(comments)
                     
             return ui_count, comments, title
             
@@ -321,6 +288,20 @@ def get_yt_data(v_id, deep_scrape=False):
             return None, None, None
         finally:
             browser.close()
+
+def get_gradient_color(percentage):
+    """Generate a color gradient from red to green based on like ratio (0-100)"""
+    # Ensure like_ratio is within 0-100 range
+    ratio = max(0, min(100, percentage))
+
+    # Red (255, 0, 0) at 0% to Green (0, 255, 0) at 100%
+    red = int(255 * (1 - ratio / 100))
+    green = int(255 * (ratio / 100))
+    blue = 0
+
+    # Convert to hex color string
+    hex_color = f"{red:02x}{green:02x}{blue:02x}"
+    return int(hex_color, 16)
 
 def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
     logging.info(f"Detected removed comment by '{author}': {text[:50]}... Sending deletion alert to Discord.")
@@ -338,7 +319,7 @@ def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
                 return int(time.time())
         return int(iso_timestamp) if isinstance(iso_timestamp, (int, float)) else int(time.time())
     
-    color = 0xFFEB3B if percentage <= 25 else 0xFFC107 if percentage <= 50 else 0xD32F2F
+    color = get_gradient_color(percentage)
     
     payload = {
         "embeds": [{
@@ -380,7 +361,7 @@ if channels:
                 logging.warning(f"Failed to load existing videos: {e}")
         
         # Merge new videos with existing ones
-        all_videos = list(dict.fromkeys(existing_videos + fetched_videos))  # Remove duplicates while preserving order
+        all_videos = list(dict.fromkeys(existing_videos + fetched_videos))
         
         # Save updated video list
         with open(VIDEO_LIST, "w", encoding='utf-8') as f:
@@ -410,7 +391,6 @@ if os.path.exists(STATE_FILE):
             content = f.read().strip()
             if content:
                 history = json.loads(content)
-                logging.info("Loaded existing comment state.")
             else:
                 logging.info("Comment state file is empty, starting fresh.")
                 history = {}
@@ -515,7 +495,7 @@ for v_id in video_ids:
     # Send alerts for newly detected deletions
     if deletions:
         total_tracked = len([c for c in updated_comments if not c.get('deleted', False)])
-        perc = (len(deletions) / max(total_tracked + len(deletions), 1)) * 100  # Approximate percentage
+        perc = (len(deletions) / max(total_tracked + len(deletions), 1)) * 100
         logging.info(f"Detected {len(deletions)} new deletions for video {v_id}.")
         for d in deletions:
             send_deletion_alert(d['a'], d['t'], v_id, d.get('firstSeen', d.get('ts_posted', d.get('ts', datetime.now().isoformat()))), datetime.now().isoformat(), perc, title)
