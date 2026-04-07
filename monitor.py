@@ -209,7 +209,6 @@ def fetch_latest_videos(channels):
     """Fetch latest videos from specified YouTube channels"""
     latest_videos = []
     user_agent = random.choice(USER_AGENTS)
-    # logging.info(f"Selected user agent for fetching: {user_agent}")
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -318,7 +317,6 @@ def get_publish_date_only(v_id):
     if v_id in history and 'published' in history[v_id]:
         try:
             cached_date = datetime.fromisoformat(history[v_id]['published'])
-            # logging.info(f"📋 Using cached publish date for {v_id}: {cached_date}")
             return cached_date
         except (ValueError, TypeError) as e:
             logging.warning(f"Invalid cached date format for {v_id}: {e}")
@@ -364,7 +362,6 @@ def get_publish_date_only(v_id):
                                 parsed_date = _parse_date_from_text(date_text)
                                 if parsed_date:
                                     publish_date = parsed_date
-                                    # logging.info(f"✅ Successfully parsed date from selector [{selector}] {i+1}: {parsed_date}")
                                     # Cache the publish date for future use
                                     if v_id not in history:
                                         history[v_id] = {"visible_count": 0, "tracked_count": 0, "comments": []}
@@ -457,11 +454,9 @@ def get_yt_data(v_id, deep_scrape=False):
                         if date_elem.count() > 0:
                             date_text = date_elem.first.text_content().strip() if selector != date_selectors[-1] else date_elem.first.get_attribute('aria-label')
                             if date_text:
-                                # logging.info(f"🔍 Deep scrape trying selector {i+1}/{len(date_selectors)}: '{selector}' found text: '{date_text[:50]}...'")
                                 parsed_date = _parse_date_from_text(date_text)
                                 if parsed_date:
                                     publish_date = parsed_date
-                                    # logging.info(f"✅ Successfully parsed date from selector [{selector}] {i+1}: {parsed_date}")
                                     break
                     except Exception as e:
                         logging.warning(f"❌ Deep scrape selector {i+1}/{len(date_selectors)} failed: {e}")
@@ -686,7 +681,6 @@ if channels:
         
         with open(VIDEO_LIST, "w", encoding='utf-8') as f:
             json.dump(updated_data, f, indent=2)
-        # logging.info(f"Updated videos list with {len(fetched_videos)} new videos. Total active: {len(all_active)}, archived: {len(existing_data['archived'])}")
     else:
         logging.warning("No videos fetched from channels.")
 else:
@@ -991,6 +985,5 @@ try:
     
     with open(STATE_FILE, "w", encoding='utf-8') as f:
         json.dump(history, f, indent=2, ensure_ascii=False)
-    logging.info("Comment state saved. Monitoring complete.")
 except Exception as e:
     logging.error(f"Failed to save comment state: {e}")
