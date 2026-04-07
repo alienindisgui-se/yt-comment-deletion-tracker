@@ -165,31 +165,40 @@ USER_AGENTS = [
 def is_members_only_video(page):
     """Check if video is members only"""
     try:
-        # Check for various "members only" indicators
+        # Very specific "members only" indicators - be extremely conservative
         members_indicators = [
-            'button[aria-label*="Join"], button[aria-label*="Join this channel"]',
+            # Look for explicit "Members only" badges or text in video context
             'span:has-text("Members only")',
             'yt-formatted-string:has-text("Members only")',
-            '[aria-label*="Members only"]',
+            # Specific YouTube membership elements
             'ytd-members-only-renderer',
-            'ytd-button-shape:has-text("Join")'
+            # Only check for aria-label that explicitly mentions "members only"
+            '[aria-label*="Members only"]'
         ]
         
         for indicator in members_indicators:
             try:
-                if page.locator(indicator).count() > 0:
-                    return True
+                elements = page.locator(indicator)
+                if elements.count() > 0:
+                    # Additional verification - check if the element is actually visible
+                    if elements.first.is_visible():
+                        logging.info(f"DEBUG: Found members-only indicator: {indicator}")
+                        return True
             except (Exception, TimeoutError):
                 continue
         
-        # Check page content for "members only" text
+        # Check page content for "members only" text - be very specific
         page_content = page.content()
-        if re.search(r'members\s+only', page_content, re.IGNORECASE):
+        # Look for "members only" in specific contexts, not just anywhere
+        if re.search(r'members\s+only.*video|video.*members\s+only', page_content, re.IGNORECASE):
+            logging.info("DEBUG: Found members-only text in page content")
             return True
             
     except Exception as e:
         logging.debug(f"Error checking members only: {e}")
         return False
+    
+    return False
 
 def generate_persistent_id(author, text):
     raw_str = f"{author}|{text}"
@@ -742,14 +751,18 @@ for v_id in video_ids:
         page = context.new_page()
         
         try:
-            page.goto(f"https://www.youtube.com/watch?v={v_id}", timeout=30000)
-            page.wait_for_load_state('networkidle')
+            page.goto(f"https://www.youtube.com/watch?v={v_id}", timeout=60000)
+            page.wait_for_load_state('networkidle', timeout=10000)
             
             if is_members_only_video(page):
                 logging.info(f"Video [{v_id}] is members only, skipping.")
                 members_only = True
+            else:
+                logging.debug(f"Video [{v_id}] is not members only, continuing processing.")
+        except TimeoutError as e:
+            logging.warning(f"Timeout checking members only for {v_id}, assuming video is public and continuing: {e}")
         except Exception as e:
-            logging.warning(f"Failed to check members only for {v_id}: {e}")
+            logging.warning(f"Failed to check members only for {v_id}, assuming video is public and continuing: {e}")
         finally:
             browser.close()
     
