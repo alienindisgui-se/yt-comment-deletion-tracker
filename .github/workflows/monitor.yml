@@ -2,7 +2,7 @@ name: Monitor Comments
 
 on:
   schedule:
-    - cron: '*/10 * * * *'  # Runs every 10 minutes
+    - cron: '2-59/10 * * * *'  # Runs 2 minutes past every 10-minute interval to avoid congestion
   workflow_dispatch:       # Allows manual trigger
 
 concurrency:
