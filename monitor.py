@@ -6,12 +6,130 @@ import random
 import sys
 import logging
 import hashlib
-from datetime import datetime
+import re
+import functools
+from datetime import datetime, timedelta
 from playwright.sync_api import sync_playwright, TimeoutError
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Timing decorator for debugging
+def timer(func):
+    """Decorator to time function execution"""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        result = func(*args, **kwargs)
+        end_time = time.time()
+        execution_time = end_time - start_time
+        logging.info(f"⏱️  {func.__name__}() executed in {execution_time:.2f}s")
+        return result
+    return wrapper
+
+# Helper functions for date parsing
+# @timer
+def _parse_date_from_text(text):
+    """Parse date from various text formats"""
+    try:
+        # Handle "X days ago" format
+        days_match = re.search(r'(\d+)\s+days?\s+ago', text, re.IGNORECASE)
+        if days_match:
+            days_ago = int(days_match.group(1))
+            return datetime.now() - timedelta(days=days_ago)
+        
+        # Handle "X hours ago" format
+        hours_match = re.search(r'(\d+)\s+hours?\s+ago', text, re.IGNORECASE)
+        if hours_match:
+            hours_ago = int(hours_match.group(1))
+            if hours_ago < 24:  # Only count if less than a day old
+                return datetime.now() - timedelta(hours=hours_ago)
+        
+        # Handle "Premiered on DATE" or "Published on DATE" format
+        date_match = re.search(r'(?:Premiered|Published|Streamed)\s+on\s+(.+)', text, re.IGNORECASE)
+        if date_match:
+            date_str = date_match.group(1)
+            # Try different date formats
+            for fmt in ['%b %d, %Y', '%d %b %Y', '%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y']:
+                try:
+                    return datetime.strptime(date_str, fmt)
+                except ValueError:
+                    continue
+        
+        # Handle direct date patterns
+        date_patterns = [
+            r'(\w{3}\s+\d{1,2},\s+\d{4})',  # "Apr 6, 2026"
+            r'(\d{1,2}\s+\w{3}\s+\d{4})',  # "6 Apr 2026"
+            r'(\d{4}-\d{2}-\d{2})',        # "2026-04-06"
+            r'(\d{2}/\d{2}/\d{4})',        # "04/06/2026"
+        ]
+        
+        for pattern in date_patterns:
+            match = re.search(pattern, text)
+            if match:
+                date_str = match.group(1)
+                for fmt in ['%b %d, %Y', '%d %b %Y', '%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y']:
+                    try:
+                        return datetime.strptime(date_str, fmt)
+                    except ValueError:
+                        continue
+        
+    except Exception as e:
+        logging.debug(f"Date parsing failed for '{text}': {e}")
+    
+    return None
+
+@timer
+def _search_dates_in_page_content(page_content):
+    """Search for dates in page HTML content"""
+    try:
+        # Look for date patterns in JSON-LD structured data
+        json_ld_match = re.search(r'"datePublished":\s*"([^"]+)"', page_content)
+        if json_ld_match:
+            date_str = json_ld_match.group(1)
+            try:
+                # Handle ISO format dates
+                if 'T' in date_str:
+                    date_str = date_str.split('T')[0]
+                return datetime.strptime(date_str, '%Y-%m-%d')
+            except ValueError:
+                pass
+        
+        # Look for upload date in page content
+        upload_match = re.search(r'"uploadDate":\s*"([^"]+)"', page_content)
+        if upload_match:
+            date_str = upload_match.group(1)
+            try:
+                if 'T' in date_str:
+                    date_str = date_str.split('T')[0]
+                return datetime.strptime(date_str, '%Y-%m-%d')
+            except ValueError:
+                pass
+        
+        # Look for any date-like patterns in the content
+        date_patterns = [
+            r'(\d{4}-\d{2}-\d{2})',
+            r'(\d{2}/\d{2}/\d{4})',
+        ]
+        
+        for pattern in date_patterns:
+            matches = re.findall(pattern, page_content)
+            if matches:
+                # Take the first match that looks reasonable
+                for date_str in matches[:3]:  # Check first 3 matches
+                    try:
+                        if '-' in date_str:
+                            return datetime.strptime(date_str, '%Y-%m-%d')
+                        elif '/' in date_str:
+                            return datetime.strptime(date_str, '%m/%d/%Y')
+                    except ValueError:
+                        continue
+    
+    except Exception as e:
+        logging.debug(f"Page content date search failed: {e}")
+    
+    return None
 
 # Setup logging and encoding
 sys.stdout.reconfigure(encoding='utf-8')
@@ -36,6 +154,7 @@ logging.basicConfig(
 VIDEO_LIST = "videos.json"
 STATE_FILE = "comment_state.json"
 WEBHOOK = os.getenv("DISCORD_WEBHOOK")
+ACCEPT_LANGUAGE_HEADER = 'en-US,en;q=0.9'
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -43,15 +162,53 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 ]
 
+def is_members_only_video(page):
+    """Check if video is members only"""
+    try:
+        # Very specific "members only" indicators - be extremely conservative
+        members_indicators = [
+            # Look for explicit "Members only" badges or text in video context
+            'span:has-text("Members only")',
+            'yt-formatted-string:has-text("Members only")',
+            # Specific YouTube membership elements
+            'ytd-members-only-renderer',
+            # Only check for aria-label that explicitly mentions "members only"
+            '[aria-label*="Members only"]'
+        ]
+        
+        for indicator in members_indicators:
+            try:
+                elements = page.locator(indicator)
+                if elements.count() > 0:
+                    # Additional verification - check if the element is actually visible
+                    if elements.first.is_visible():
+                        logging.info(f"DEBUG: Found members-only indicator: {indicator}")
+                        return True
+            except (Exception, TimeoutError):
+                continue
+        
+        # Check page content for "members only" text - be very specific
+        page_content = page.content()
+        # Look for "members only" in specific contexts, not just anywhere
+        if re.search(r'members\s+only.*video|video.*members\s+only', page_content, re.IGNORECASE):
+            logging.info("DEBUG: Found members-only text in page content")
+            return True
+            
+    except Exception as e:
+        logging.debug(f"Error checking members only: {e}")
+        return False
+    
+    return False
+
 def generate_persistent_id(author, text):
     raw_str = f"{author}|{text}"
     return hashlib.md5(raw_str.encode('utf-8')).hexdigest()
 
+@timer
 def fetch_latest_videos(channels):
     """Fetch latest videos from specified YouTube channels"""
     latest_videos = []
     user_agent = random.choice(USER_AGENTS)
-    logging.info(f"Selected user agent for fetching: {user_agent}")
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -59,7 +216,7 @@ def fetch_latest_videos(channels):
             user_agent=user_agent,
             viewport={'width': 1920, 'height': 1080},
             locale='en-US',
-            extra_http_headers={'Accept-Language': 'en-US,en;q=0.9'}
+            extra_http_headers={'Accept-Language': ACCEPT_LANGUAGE_HEADER}
         )
         page = context.new_page()
         
@@ -119,6 +276,7 @@ def fetch_latest_videos(channels):
     
     return latest_videos
 
+# @timer
 def parse_youtube_timestamp(timestamp_text, current_time):
     """Parse YouTube relative timestamps like '3 hours ago' into actual datetime"""
     if not timestamp_text or timestamp_text == "NO_TIMESTAMP_FOUND":
@@ -152,6 +310,105 @@ def parse_youtube_timestamp(timestamp_text, current_time):
     actual_time = current_time - time_diff
     return actual_time
 
+# @timer
+def get_publish_date_only(v_id):
+    """Quick function to get just the publish date without scraping comments"""
+    # First check if we already have the publish date cached
+    if v_id in history and 'published' in history[v_id]:
+        try:
+            cached_date = datetime.fromisoformat(history[v_id]['published'])
+            return cached_date
+        except (ValueError, TypeError) as e:
+            logging.warning(f"Invalid cached date format for {v_id}: {e}")
+    
+    # If not cached, scrape it
+    logging.info(f"🌐 Scraping publish date for {v_id} (not cached)")
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            extra_http_headers={'Accept-Language': ACCEPT_LANGUAGE_HEADER}
+        )
+        page = context.new_page()
+        
+        try:
+            page.goto(f"https://www.youtube.com/watch?v={v_id}", timeout=60000)
+            page.wait_for_load_state('networkidle')
+            
+            # Get publish date using the same logic as get_yt_data
+            publish_date = None
+            try:
+                date_selectors = [
+                    "#info-text",
+                    "#description-inner yt-formatted-string.ytd-video-secondary-info-renderer",
+                    "#info-strings yt-formatted-string.ytd-video-secondary-info-renderer",
+                    ".ytd-video-secondary-info-renderer yt-formatted-string",
+                    ".ytd-video-primary-info-renderer .ytd-simple-timestamp-renderer",
+                    "ytd-video-view-model-renderer .ytd-simple-timestamp-renderer",
+                    "ytd-metadata-row-renderer .ytd-simple-timestamp-renderer",
+                    ".ytd-simple-timestamp-renderer",
+                    "#meta-contents ytd-video-secondary-info-renderer yt-formatted-string",
+                    "span.ytd-video-secondary-info-renderer",
+                    "span.ytd-watch-metadata[aria-label*=\"Published\"], span.ytd-watch-metadata[aria-label*=\"Premiered\"], span.ytd-watch-metadata[aria-label*=\"Streamed\"]"
+                ]
+
+                for i, selector in enumerate(date_selectors):
+                    try:
+                        date_elem = page.locator(selector)
+                        if date_elem.count() > 0:
+                            date_text = date_elem.first.text_content().strip() if selector != date_selectors[-1] else date_elem.first.get_attribute('aria-label')
+                            if date_text:
+                                logging.info(f"🔍 Trying selector {i+1}/{len(date_selectors)}: '{selector}' found text: '{date_text[:50]}...'")
+                                parsed_date = _parse_date_from_text(date_text)
+                                if parsed_date:
+                                    publish_date = parsed_date
+                                    # Cache the publish date for future use
+                                    if v_id not in history:
+                                        history[v_id] = {"visible_count": 0, "tracked_count": 0, "comments": []}
+                                    history[v_id]['published'] = parsed_date.isoformat()
+                                    logging.info(f"💾 Cached publish date for {v_id}: {parsed_date}")
+                                    # Save cache immediately to prevent loss
+                                    try:
+                                        with open(STATE_FILE, "w", encoding='utf-8') as f:
+                                            json.dump(history, f, indent=2, ensure_ascii=False)
+                                        logging.info(f"💾 Saved cache to {STATE_FILE}")
+                                    except Exception as e:
+                                        logging.warning(f"Failed to save cache: {e}")
+                                    break
+                    except Exception as e:
+                        logging.warning(f"❌ Selector {i+1}/{len(date_selectors)} failed: {e}")
+                        continue
+
+                # If still not found, try searching page content
+                if not publish_date:
+                    page_content = page.content()
+                    parsed_date = _search_dates_in_page_content(page_content)
+                    if parsed_date:
+                        publish_date = parsed_date
+                        # Cache the publish date
+                        if v_id not in history:
+                            history[v_id] = {"visible_count": 0, "tracked_count": 0, "comments": []}
+                        history[v_id]['published'] = parsed_date.isoformat()
+                        logging.info(f"💾 Cached publish date from page content for {v_id}: {parsed_date}")
+                        # Save cache immediately
+                        try:
+                            with open(STATE_FILE, "w", encoding='utf-8') as f:
+                                json.dump(history, f, indent=2, ensure_ascii=False)
+                            logging.info(f"💾 Saved cache to {STATE_FILE}")
+                        except Exception as e:
+                            logging.warning(f"Failed to save cache: {e}")
+
+            except Exception:
+                pass
+            
+            return publish_date
+            
+        except Exception:
+            return None
+        finally:
+            browser.close()
+
+# @timer
 def get_yt_data(v_id, deep_scrape=False):
     user_agent = random.choice(USER_AGENTS)
     
@@ -161,13 +418,66 @@ def get_yt_data(v_id, deep_scrape=False):
             user_agent=user_agent,
             viewport={'width': 1920, 'height': 1080},
             locale='en-US',
-            extra_http_headers={'Accept-Language': 'en-US,en;q=0.9'}
+            extra_http_headers={'Accept-Language': ACCEPT_LANGUAGE_HEADER}
         )
         page = context.new_page()
         
         try:
             page.goto(f"https://www.youtube.com/watch?v={v_id}", timeout=60000)
             page.wait_for_load_state('networkidle')
+            
+            # Get Title and publish date early for logging and archiving
+            title_elem = page.locator('h1.ytd-watch-metadata yt-formatted-string')
+            title = title_elem.text_content().strip() if title_elem.count() > 0 else 'Unknown'
+            
+            # Get publish date for archiving check
+            publish_date = None
+            try:
+                # Try multiple selectors for better date extraction
+                date_selectors = [
+                    "#info-text", #WORKING
+                    "#description-inner yt-formatted-string.ytd-video-secondary-info-renderer",
+                    "#info-strings yt-formatted-string.ytd-video-secondary-info-renderer",
+                    ".ytd-video-secondary-info-renderer yt-formatted-string",
+                    ".ytd-video-primary-info-renderer .ytd-simple-timestamp-renderer",
+                    "ytd-video-view-model-renderer .ytd-simple-timestamp-renderer",
+                    "ytd-metadata-row-renderer .ytd-simple-timestamp-renderer",
+                    ".ytd-simple-timestamp-renderer",
+                    "#meta-contents ytd-video-secondary-info-renderer yt-formatted-string",
+                    "span.ytd-video-secondary-info-renderer",
+                    "span.ytd-watch-metadata[aria-label*=\"Published\"], span.ytd-watch-metadata[aria-label*=\"Premiered\"], span.ytd-watch-metadata[aria-label*=\"Streamed\"]"
+                ]
+
+                for i, selector in enumerate(date_selectors):
+                    try:
+                        date_elem = page.locator(selector)
+                        if date_elem.count() > 0:
+                            date_text = date_elem.first.text_content().strip() if selector != date_selectors[-1] else date_elem.first.get_attribute('aria-label')
+                            if date_text:
+                                parsed_date = _parse_date_from_text(date_text)
+                                if parsed_date:
+                                    publish_date = parsed_date
+                                    break
+                    except Exception as e:
+                        logging.warning(f"❌ Deep scrape selector {i+1}/{len(date_selectors)} failed: {e}")
+                        continue
+
+                # If still not found, try searching page content
+                if not publish_date:
+                    logging.info("Searching page content for date patterns...")
+                    page_content = page.content()
+                    parsed_date = _search_dates_in_page_content(page_content)
+                    if parsed_date:
+                        publish_date = parsed_date
+                        logging.info(f"Found date in page content: {parsed_date}")
+
+            except Exception as e:
+                logging.warning(f"Failed to get publish date: {e}")
+            
+            from datetime import datetime
+            # Only log processing info for deep scrape to avoid duplicate logs
+            if deep_scrape:
+                logging.info(f"Processing video '{v_id}' with title '{title}'")
             
             # Scroll to trigger the comment section
             page.evaluate("window.scrollBy(0, 800)")
@@ -196,10 +506,6 @@ def get_yt_data(v_id, deep_scrape=False):
                 except Exception as e:
                     logging.warning(f"Failed to sort comments: {e}. Proceeding with default sort.")
 
-            # Get Title
-            title_elem = page.locator('h1.ytd-watch-metadata yt-formatted-string')
-            title = title_elem.text_content().strip() if title_elem.count() > 0 else 'Unknown'
-            
             # Robust Count Extraction
             ui_count = 0
             count_locators = [
@@ -267,6 +573,7 @@ def get_yt_data(v_id, deep_scrape=False):
                             logging.debug(f"Duplicate comment detected at index {i}: {text[:50]}...")
                         else:
                             # Parse the YouTube timestamp to get actual posting time
+                            from datetime import datetime
                             current_time = datetime.now()
                             first_seen_time = parse_youtube_timestamp(time_text, current_time)
                             
@@ -281,14 +588,15 @@ def get_yt_data(v_id, deep_scrape=False):
                     except Exception as e:
                         logging.warning(f"Failed to extract comment {i}: {e}")
                     
-            return ui_count, comments, title
+            return ui_count, comments, title, publish_date
             
         except Exception as e:
             logging.error(f"Scrape failed for {v_id}: {e}")
-            return None, None, None
+            return None, None, None, None
         finally:
             browser.close()
 
+@timer
 def get_gradient_color(percentage):
     """Generate a color gradient from red to green based on like ratio (0-100)"""
     # Ensure like_ratio is within 0-100 range
@@ -303,6 +611,7 @@ def get_gradient_color(percentage):
     hex_color = f"{red:02x}{green:02x}{blue:02x}"
     return int(hex_color, 16)
 
+@timer
 def send_deletion_alert(author, text, v_id, ts, deleted_at, percentage, title):
     logging.info(f"Detected removed comment by '{author}': {text[:50]}... Sending deletion alert to Discord.")
     if not WEBHOOK:
@@ -344,29 +653,34 @@ script_start_time = time.time()
 
 # Fetch latest videos from channels before processing
 channels_env = os.getenv('CHANNELS_LIST')
-logging.info(f"CHANNELS_LIST environment variable: '{channels_env}'")
 channels = channels_env.split(',') if channels_env and channels_env != 'None' else []
 
 if channels:
     fetched_videos = fetch_latest_videos(channels)
     if fetched_videos:
         # Load existing videos
-        existing_videos = []
+        existing_data = {"active": [], "archived": []}
         if os.path.exists(VIDEO_LIST):
             try:
                 with open(VIDEO_LIST, "r") as f:
-                    existing_videos = json.load(f)
-                logging.info(f"Loaded {len(existing_videos)} existing videos from {VIDEO_LIST}")
+                    data = json.load(f)
+                    existing_data = {"active": data.get("active", []), "archived": data.get("archived", [])}
             except Exception as e:
                 logging.warning(f"Failed to load existing videos: {e}")
         
-        # Merge new videos with existing ones
-        all_videos = list(dict.fromkeys(existing_videos + fetched_videos))
+        # Merge new videos with existing active ones (skip if already in archived)
+        all_active = list(dict.fromkeys(existing_data["active"] + fetched_videos))
+        # Remove any videos that are in archived from active
+        all_active = [vid for vid in all_active if vid not in existing_data["archived"]]
         
-        # Save updated video list
+        # Save updated video list with both active and archived
+        updated_data = {
+            "active": all_active,
+            "archived": existing_data["archived"]
+        }
+        
         with open(VIDEO_LIST, "w", encoding='utf-8') as f:
-            json.dump(all_videos, f, indent=2)
-        logging.info(f"Updated videos list with {len(fetched_videos)} new videos. Total: {len(all_videos)}")
+            json.dump(updated_data, f, indent=2)
     else:
         logging.warning("No videos fetched from channels.")
 else:
@@ -374,15 +688,19 @@ else:
 
 # Load video IDs for monitoring
 if not os.path.exists(VIDEO_LIST):
+    # Create new format with active and archived arrays
+    default_data = {"active": [], "archived": []}
     with open(VIDEO_LIST, "w") as f:
-        json.dump(["Pt70d9k1MV8"], f)
-    logging.info("Created videos.json with default ID. Add additional IDs as needed and restart.")
+        json.dump(default_data, f)
+    logging.info("Created videos.json with empty active list. Add video IDs to the 'active' array and restart.")
     sys.exit()
 
-video_ids = []
+# Load video data and extract only active videos for monitoring
 with open(VIDEO_LIST, "r") as f:
-    video_ids = json.load(f)
-logging.info(f"Monitoring {len(video_ids)} videos")
+    data = json.load(f)
+    video_ids = data.get("active", [])
+
+    archived_count = len(data.get("archived", []))
 
 history = {}
 if os.path.exists(STATE_FILE):
@@ -409,9 +727,56 @@ archived_video_ids = []
 
 for v_id in video_ids:
     start_time = time.time()
-    logging.info(f"Processing video {v_id}.")
     
-    # Check if video should be archived (older than 4 days)
+    # Quick check for archiving based on publish date first (fast operation)
+    publish_date = get_publish_date_only(v_id)
+    if not publish_date:
+        logging.warning(f"Could not get publish date for {v_id}, skipping.")
+        continue
+        
+    # Check if video is members only and skip if so
+    members_only = False
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+            extra_http_headers={'Accept-Language': ACCEPT_LANGUAGE_HEADER}
+        )
+        page = context.new_page()
+        
+        try:
+            page.goto(f"https://www.youtube.com/watch?v={v_id}", timeout=60000)
+            page.wait_for_load_state('networkidle', timeout=10000)
+            
+            if is_members_only_video(page):
+                logging.info(f"Video [{v_id}] is members only, skipping.")
+                members_only = True
+            else:
+                logging.debug(f"Video [{v_id}] is not members only, continuing processing.")
+        except TimeoutError as e:
+            logging.warning(f"Timeout checking members only for {v_id}, assuming video is public and continuing: {e}")
+        except Exception as e:
+            logging.warning(f"Failed to check members only for {v_id}, assuming video is public and continuing: {e}")
+        finally:
+            browser.close()
+    
+    if members_only:
+        continue
+    
+    if publish_date:
+        days_old = (datetime.now() - publish_date).days
+        if days_old > 4:
+            logging.info(f"Video [{v_id}] is {days_old} days old (based on publish date), marking as archived and skipping.")
+            # Mark as archived in state
+            old_state = history.get(v_id, {"visible_count": 0, "tracked_count": 0, "comments": []})
+            old_state["archived"] = True
+            old_state["archived_date"] = datetime.now().isoformat()
+            history[v_id] = old_state
+            videos_archived += 1
+            archived_video_ids.append(v_id)
+            continue
+    
+    # Check if video should be archived based on existing comment history
     old_state = history.get(v_id, {"visible_count": 0, "tracked_count": 0, "comments": []})
     if old_state.get("comments"):
         # Find the oldest comment's firstSeen date
@@ -427,7 +792,7 @@ for v_id in video_ids:
                 oldest_date = datetime.fromisoformat(oldest_first_seen.replace('Z', '+00:00'))
                 days_old = (datetime.now() - oldest_date).days
                 if days_old > 4:
-                    logging.info(f"Video {v_id} is {days_old} days old, marking as archived and skipping.")
+                    logging.info(f"Video [{v_id}] is {days_old} days old (based on oldest comment), marking as archived and skipping.")
                     # Mark as archived in state
                     old_state["archived"] = True
                     old_state["archived_date"] = datetime.now().isoformat()
@@ -438,11 +803,16 @@ for v_id in video_ids:
             except ValueError:
                 logging.warning(f"Invalid date format for video {v_id}: {oldest_first_seen}")
     
-    # Always perform deep scrape to get current comments
-    ui_count, current_comments, title = get_yt_data(v_id, deep_scrape=True)
+    # Only perform expensive deep scrape if video is not being archived
+    ui_count, current_comments, title, publish_date = get_yt_data(v_id, deep_scrape=True)
     if current_comments is None:
         logging.warning(f"Skipping video {v_id} due to scraping failure.")
         continue
+    
+    # Cache publish date if we got it from deep scrape and it's not already cached
+    if publish_date and v_id in history and 'published' not in history[v_id]:
+        history[v_id]['published'] = publish_date.isoformat()
+        logging.info(f"💾 Cached publish date from deep scrape for {v_id}: {publish_date}")
     
     old_state = history.get(v_id, {"visible_count": 0, "tracked_count": 0, "comments": []})
     
@@ -496,7 +866,7 @@ for v_id in video_ids:
     if deletions:
         total_tracked = len([c for c in updated_comments if not c.get('deleted', False)])
         perc = (len(deletions) / max(total_tracked + len(deletions), 1)) * 100
-        logging.info(f"Detected {len(deletions)} new deletions for video {v_id}.")
+        logging.info(f"Detected {len(deletions)} new deletions for video [{v_id}].")
         for d in deletions:
             send_deletion_alert(d['a'], d['t'], v_id, d.get('firstSeen', d.get('ts_posted', d.get('ts', datetime.now().isoformat()))), datetime.now().isoformat(), perc, title)
     
@@ -506,7 +876,7 @@ for v_id in video_ids:
     
     if video_changes > 0:
         videos_with_changes += 1
-        logging.info(f"Video '{title}[{v_id}]' changes: +{video_new_comments} new, -{video_deleted_count} deleted")
+        logging.info(f"Video [{v_id}] changes: +{video_new_comments} new, -{video_deleted_count} deleted")
     else:
         videos_with_no_changes += 1
     
@@ -527,7 +897,7 @@ for v_id in video_ids:
     # Log processing time
     end_time = time.time()
     processing_time = end_time - start_time
-    logging.info(f"Completed processing video '{title}[{v_id}]' in {processing_time:.2f} seconds.")
+    logging.info(f"Completed processing video '{v_id}' in {processing_time:.2f} seconds.")
 
 # Print summary statistics before final save
 logging.info("=" * 60)
@@ -565,26 +935,55 @@ else:
 
 logging.info(f"Total runtime: {runtime_str}")
 
-# Remove archived videos from videos.json list
+# Move archived videos from active to archived list
 if archived_video_ids:
     try:
-        # Load current video list
+        # Load current video data
         with open(VIDEO_LIST, "r") as f:
-            current_video_ids = json.load(f)
+            data = json.load(f)
         
-        # Remove archived videos from the list
-        updated_video_ids = [vid for vid in current_video_ids if vid not in archived_video_ids]
+        active_videos = [vid for vid in data.get("active", []) if vid not in archived_video_ids]
+
         
-        # Save updated list
+        archived_videos = list(dict.fromkeys(data.get("archived", []) + archived_video_ids))
+        
+        # Save updated data with both active and archived
+        updated_data = {
+            "active": active_videos,
+            "archived": archived_videos
+        }
+        
         with open(VIDEO_LIST, "w", encoding='utf-8') as f:
-            json.dump(updated_video_ids, f, indent=2)
+            json.dump(updated_data, f, indent=2)
         
-        logging.info(f"Removed {len(archived_video_ids)} archived videos from {VIDEO_LIST}")
+        logging.info(f"Moved {len(archived_video_ids)} videos from active to archived in {VIDEO_LIST}")
         for archived_id in archived_video_ids:
-            logging.info(f"  - Removed archived video: {archived_id}")
+            logging.info(f"  - Archived video: {archived_id}")
     except Exception as e:
         logging.warning(f"Failed to update {VIDEO_LIST}: {e}")
 
-with open(STATE_FILE, "w", encoding='utf-8') as f:
-    json.dump(history, f, indent=2, ensure_ascii=False)
-logging.info("Comment state saved. Monitoring complete.")
+# Save history while preserving any cached published dates
+try:
+    # Load existing history to preserve cached published fields
+    existing_history = {}
+    if os.path.exists(STATE_FILE):
+        try:
+            with open(STATE_FILE, "r", encoding='utf-8') as f:
+                existing_history = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            existing_history = {}
+    
+    # Merge current history with existing cached data
+    for v_id, existing_data in existing_history.items():
+        if v_id in history:
+            # Preserve published field from existing data if current doesn't have it
+            if 'published' in existing_data and 'published' not in history[v_id]:
+                history[v_id]['published'] = existing_data['published']
+        else:
+            # Preserve entire existing entry if not in current history
+            history[v_id] = existing_data
+    
+    with open(STATE_FILE, "w", encoding='utf-8') as f:
+        json.dump(history, f, indent=2, ensure_ascii=False)
+except Exception as e:
+    logging.error(f"Failed to save comment state: {e}")
