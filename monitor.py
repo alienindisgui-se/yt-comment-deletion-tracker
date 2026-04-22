@@ -487,7 +487,7 @@ def get_yt_data(v_id, deep_scrape=False):
                 page.wait_for_timeout(3000)
             except TimeoutError:
                 logging.warning("Comments section did not attach in time. Video might have comments disabled.")
-                return None, None, None
+                return None, None, None, None
 
             # LANGUAGE-INDEPENDENT SORT TO "NEWEST FIRST"
             if deep_scrape:
