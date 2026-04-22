@@ -21,6 +21,6 @@ jobs:
         uses: alienindisgui-se/discord-changelog-notifier@v1.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          discord_webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          discord_webhook: ${{ secrets.NOTIFICATION_DISCORD_WEBHOOK }}
           ai_api_key: ${{ secrets.GEMINI_API_KEY }}
           language: ''  # Empty for English, 'sv' for Swedish
